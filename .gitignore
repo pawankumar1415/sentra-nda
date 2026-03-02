@@ -215,8 +215,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Local Setting JSON
-**/*.local.settings.json
+# Local Settings JSON (credentials — never commit these)
+**/local.settings.json
+local.settings.json
 
 # Useless files
 Sellafield deliverable definition - Sentra 3.docx
