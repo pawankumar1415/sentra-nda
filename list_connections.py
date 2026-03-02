@@ -1,6 +1,5 @@
 """
-list_connections.py - Print all connections in the Foundry project so you can
-copy the correct connection ID into agent/local.settings.json.
+list_connections.py - Print all connections in the Foundry project.
 
 Run: venv\Scripts\python list_connections.py
 """
@@ -21,11 +20,16 @@ cred = ClientSecretCredential(tid,cid,cs) if (tid and cid and cs) else DefaultAz
 client = AIProjectClient(endpoint=PROJECT_ENDPOINT, credential=cred)
 
 print("Connections in this Foundry project:\n")
-print(f"{'Name':<40} {'Type':<30} {'ID (use this!)'}")
-print("-" * 120)
-
 for conn in client.connections.list():
-    print(f"{conn.name:<40} {conn.connection_type:<30} {conn.id}")
+    print("=" * 60)
+    # Dump every attribute the SDK gives us
+    for k in dir(conn):
+        if k.startswith("_") or callable(getattr(conn, k, None)):
+            continue
+        try:
+            print(f"  {k}: {getattr(conn, k)}")
+        except Exception:
+            pass
 
-print("\n✅ Copy the 'ID' value for your AI Search connection")
+print("\n✅ Copy the 'id' or 'name' value for your AI Search connection")
 print("   into AZURE_AI_SEARCH_CONNECTION_NAME in agent/local.settings.json")
