@@ -31,7 +31,6 @@ from typing import Optional
 from azure.ai.projects import AIProjectClient
 from azure.ai.agents.models import (
     AzureAISearchTool,
-    AzureAISearchQueryType,
     FunctionTool,
     ToolSet,
     RunStatus,
@@ -113,9 +112,6 @@ def _get_or_create_agent(client: AIProjectClient):
     ai_search_tool = AzureAISearchTool(
         index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
         index_name=AZURE_SEARCH_INDEX_NAME,
-        query_type=AzureAISearchQueryType.SEMANTIC,
-        semantic_configuration_name="default",
-        top_k=5,
     )
 
     # ── Tool 2: Python Function Tools (EAC variance + batch listing) ──────
