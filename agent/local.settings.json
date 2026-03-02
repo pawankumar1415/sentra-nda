@@ -1,0 +1,12 @@
+{
+    "IsEncrypted": false,
+    "Values": {
+        "AZURE_FOUNDRY_PROJECT_ENDPOINT": "<YOUR_PROJECT_ENDPOINT>",
+        "AZURE_FOUNDRY_MODEL_DEPLOYMENT": "gpt-4o",
+        "AZURE_AI_SEARCH_CONNECTION_NAME": "<YOUR_AI_SEARCH_CONNECTION_NAME>",
+        "AZURE_SEARCH_INDEX_NAME": "nda-mppr-projects",
+        "AZURE_TENANT_ID": "<YOUR_TENANT_ID>",
+        "AZURE_CLIENT_ID": "<YOUR_APP_CLIENT_ID>",
+        "AZURE_CLIENT_SECRET": "<YOUR_APP_CLIENT_SECRET>"
+    }
+}
