@@ -153,11 +153,13 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
         thread_id=thread_id,
         agent_id=agent_id,
     )
+    logger.info("Run created: %s (status: %s)", run.id, run.status)
 
     # Poll for completion
     while run.status in (RunStatus.QUEUED, RunStatus.IN_PROGRESS, RunStatus.REQUIRES_ACTION):
-        time.sleep(1)
+        time.sleep(2)
         run = agents_client.runs.get(thread_id=thread_id, run_id=run.id)
+        logger.info("Run status: %s", run.status)
 
         if run.status == RunStatus.REQUIRES_ACTION:
             # Handle function tool calls
@@ -167,8 +169,6 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
                 fn_args = json.loads(tool_call.function.arguments)
 
                 logger.info("Agent calling tool: %s(%s)", fn_name, fn_args)
-
-                # Dispatch to the correct Python function
                 output = _dispatch_tool(fn_name, fn_args)
                 tool_outputs.append({
                     "tool_call_id": tool_call.id,
@@ -182,13 +182,19 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
             )
 
     if run.status == RunStatus.FAILED:
-        error_msg = getattr(run, "last_error", None)
-        raise RuntimeError(f"Agent run failed: {error_msg}")
+        # Log full error details from the server
+        last_error = getattr(run, "last_error", None)
+        error_code = getattr(last_error, "code", "unknown")
+        error_msg  = getattr(last_error, "message", str(last_error))
+        logger.error("Run FAILED — code: %s | message: %s", error_code, error_msg)
+        raise RuntimeError(
+            f"Agent run failed [{error_code}]: {error_msg}\n"
+            f"Run ID: {run.id} | Thread: {thread_id}"
+        )
 
-    # Get the latest assistant message
-    # messages.list() returns an ItemPaged iterator — iterate directly
+    # Get the latest assistant message (newest first from the API)
     all_messages = list(agents_client.messages.list(thread_id=thread_id))
-    for msg in reversed(all_messages):
+    for msg in all_messages:   # newest first — no need to reverse
         if msg.role == "assistant":
             return "".join(
                 block.text.value
@@ -197,6 +203,7 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
             )
 
     return "(No response from agent)"
+
 
 def _dispatch_tool(fn_name: str, fn_args: dict) -> str:
     """Dispatches a tool call by name to the correct Python function."""
