@@ -108,27 +108,24 @@ def _get_or_create_agent(client: AIProjectClient):
 
     logger.info("Creating new agent: %s", AGENT_NAME)
 
-    # ── Tool 1: Azure AI Search (knowledge base) ──────────────────────────
-    ai_search_tool = AzureAISearchTool(
+    # ── Tool 1: Azure AI Search ───────────────────────────────────────────
+    # AzureAISearchTool exposes .definitions (list) and .resources (object)
+    # This is the correct pattern per Microsoft docs for azure-ai-agents 1.1.0
+    ai_search = AzureAISearchTool(
         index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
         index_name=AZURE_SEARCH_INDEX_NAME,
     )
 
-    # ── Tool 2: Python Function Tools (EAC variance + batch listing) ──────
+    # ── Tool 2: Python Function Tools ─────────────────────────────────────
     function_tool = FunctionTool(functions=AGENT_TOOLS)
 
-    # Build toolset and extract definitions + resources separately
-    # (some SDK versions don't accept toolset= directly in create_agent)
-    toolset = ToolSet()
-    toolset.add(ai_search_tool)
-    toolset.add(function_tool)
-
+    # Combine tool definitions; AI Search provides its own tool_resources
     agent = agents_client.create_agent(
         model=MODEL_DEPLOYMENT_NAME,
         name=AGENT_NAME,
         instructions=get_system_prompt(),
-        tools=toolset.definitions,
-        tool_resources=toolset.resources,
+        tools=ai_search.definitions + function_tool.definitions,
+        tool_resources=ai_search.resources,
     )
     logger.info("Agent created: %s", agent.id)
     return agent
