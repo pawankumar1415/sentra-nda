@@ -148,10 +148,10 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
         content=user_message,
     )
 
-    # Create run
+    # Create run — azure-ai-agents 1.1.0 uses agent_id (not assistant_id)
     run = agents_client.runs.create(
         thread_id=thread_id,
-        assistant_id=agent_id,
+        agent_id=agent_id,
     )
 
     # Poll for completion
