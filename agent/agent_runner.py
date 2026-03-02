@@ -117,6 +117,8 @@ def _get_or_create_agent(client: AIProjectClient):
     # ── Tool 2: Python Function Tools (EAC variance + batch listing) ──────
     function_tool = FunctionTool(functions=AGENT_TOOLS)
 
+    # Build toolset and extract definitions + resources separately
+    # (some SDK versions don't accept toolset= directly in create_agent)
     toolset = ToolSet()
     toolset.add(ai_search_tool)
     toolset.add(function_tool)
@@ -125,7 +127,8 @@ def _get_or_create_agent(client: AIProjectClient):
         model=MODEL_DEPLOYMENT_NAME,
         name=AGENT_NAME,
         instructions=get_system_prompt(),
-        toolset=toolset,
+        tools=toolset.definitions,
+        tool_resources=toolset.resources,
     )
     logger.info("Agent created: %s", agent.id)
     return agent
