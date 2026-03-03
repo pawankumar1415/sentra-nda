@@ -28,13 +28,29 @@ logger = logging.getLogger(__name__)
 _pool: Optional[pg_pool.ThreadedConnectionPool] = None
 
 
+def _get_password() -> str:
+    """
+    If POSTGRES_USER is an email (Entra ID user), fetch a short-lived
+    Azure AD bearer token and use it as the password.
+    Otherwise use POSTGRES_PASSWORD directly.
+    """
+    user = os.environ.get("POSTGRES_USER", "")
+    if "@" in user:
+        from azure.identity import DefaultAzureCredential
+        cred = DefaultAzureCredential()
+        token = cred.get_token("https://ossrdbms-aad.database.windows.net/.default")
+        return token.token
+    return os.environ["POSTGRES_PASSWORD"]
+
+
 def _get_dsn() -> str:
+    """Build the PostgreSQL DSN from environment variables."""
     host     = os.environ["POSTGRES_HOST"]
     db       = os.environ["POSTGRES_DB"]
     user     = os.environ["POSTGRES_USER"]
-    password = os.environ["POSTGRES_PASSWORD"]
     port     = os.environ.get("POSTGRES_PORT", "5432")
     ssl      = os.environ.get("POSTGRES_SSL", "require")
+    password = _get_password()
     return (
         f"host={host} port={port} dbname={db} "
         f"user={user} password={password} sslmode={ssl}"

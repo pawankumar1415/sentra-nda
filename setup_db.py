@@ -27,16 +27,40 @@ import os
 import psycopg2
 from pgvector.psycopg2 import register_vector
 
-# ── Connection ─────────────────────────────────────────────────────────────────
+
+def _get_password() -> str:
+    """
+    If POSTGRES_USER is an email (Entra ID user), fetch a short-lived
+    Azure AD bearer token and use it as the password.
+    Otherwise use POSTGRES_PASSWORD directly.
+    """
+    user = os.environ.get("POSTGRES_USER", "")
+    if "@" in user:
+        # Entra ID / AAD authentication
+        try:
+            from azure.identity import DefaultAzureCredential
+            cred = DefaultAzureCredential()
+            token = cred.get_token("https://ossrdbms-aad.database.windows.net/.default")
+            print("  Using Entra ID token for PostgreSQL auth")
+            return token.token
+        except Exception as e:
+            raise RuntimeError(
+                f"Entra ID token fetch failed: {e}\n"
+                "Make sure azure-identity is installed and you are logged in via \'az login\'."
+            ) from e
+    return os.environ["POSTGRES_PASSWORD"]
+
+
 def get_conn():
     return psycopg2.connect(
         host=os.environ["POSTGRES_HOST"],
         port=os.environ.get("POSTGRES_PORT", "5432"),
         dbname=os.environ["POSTGRES_DB"],
         user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
+        password=_get_password(),
         sslmode=os.environ.get("POSTGRES_SSL", "require"),
     )
+
 
 
 # ── DDL statements (run in order) ─────────────────────────────────────────────
