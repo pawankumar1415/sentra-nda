@@ -92,11 +92,13 @@ class DBConnection:
 
 
 # ── Schema bootstrap ──────────────────────────────────────────────────────────
-_SCHEMA_SQL = """
+_EMBEDDING_DIMS = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
+
+_SCHEMA_SQL = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS nda_projects (
-    project_id              TEXT PRIMARY KEY,   -- "{period}|{project_code}"
+    project_id              TEXT PRIMARY KEY,
     project_name            TEXT,
     period_short_name       TEXT,
     rag_status              TEXT,
@@ -107,7 +109,7 @@ CREATE TABLE IF NOT EXISTS nda_projects (
     schedule_variance_days  INTEGER,
     narrative_text          TEXT,
     raw_content             TEXT NOT NULL,
-    embedding               vector(1536),
+    embedding               vector({_EMBEDDING_DIMS}),
     indexed_at              TIMESTAMPTZ DEFAULT NOW()
 );
 

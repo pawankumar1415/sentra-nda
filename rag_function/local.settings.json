@@ -11,9 +11,10 @@
         "POSTGRES_SSL": "require",
         "AZURE_OPENAI_ENDPOINT": "https://<YOUR_RESOURCE>.openai.azure.com/",
         "AZURE_OPENAI_API_KEY": "<YOUR_AZURE_OPENAI_API_KEY>",
-        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
+        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT": "text-embedding-3-large",
         "AZURE_OPENAI_CHAT_DEPLOYMENT": "gpt-5.1-chat",
-        "AZURE_OPENAI_API_VERSION": "2024-02-01",
+        "AZURE_OPENAI_API_VERSION": "2024-05-01-preview",
+        "AZURE_OPENAI_EMBEDDING_DIMS": "3072",
         "EAC_VARIANCE_FILE": "../NDA Data/lifecycle_eac_variance.xlsx"
     }
 }

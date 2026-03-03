@@ -69,15 +69,23 @@ def get_conn() -> psycopg2.extensions.connection:
 
 
 # ── DDL Steps ─────────────────────────────────────────────────────────────────
+# Read embedding dimension from env (3072 = text-embedding-3-large,
+#                                   1536 = text-embedding-3-small)
+EMBEDDING_DIMS = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
+
 STEPS = [
     (
         "Enable pgvector extension",
         "CREATE EXTENSION IF NOT EXISTS vector;",
     ),
     (
-        "Create nda_projects table",
-        """
-        CREATE TABLE IF NOT EXISTS nda_projects (
+        "Drop existing table (to recreate with correct vector dimension)",
+        "DROP TABLE IF EXISTS nda_projects;",
+    ),
+    (
+        f"Create nda_projects table (vector({EMBEDDING_DIMS}))",
+        f"""
+        CREATE TABLE nda_projects (
             project_id              TEXT PRIMARY KEY,
             project_name            TEXT,
             period_short_name       TEXT,
@@ -89,7 +97,7 @@ STEPS = [
             schedule_variance_days  INTEGER,
             narrative_text          TEXT,
             raw_content             TEXT NOT NULL,
-            embedding               vector(1536),
+            embedding               vector({EMBEDDING_DIMS}),
             indexed_at              TIMESTAMPTZ DEFAULT NOW()
         );
         """,

@@ -85,7 +85,8 @@ try:
 
     sample_text = "The SRO DCA remains amber because of ongoing schedule risk."
     vec = embed(sample_text)
-    assert len(vec) == 1536, f"Expected 1536 dims, got {len(vec)}"
+    expected_dims = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
+    assert len(vec) == expected_dims, f"Expected {expected_dims} dims, got {len(vec)}"
     ok(f"Single embed: {len(vec)} dims returned")
 
     batch_texts = [
@@ -95,7 +96,7 @@ try:
     ]
     vecs = embed_batch(batch_texts)
     assert len(vecs) == 3
-    assert all(len(v) == 1536 for v in vecs)
+    assert all(len(v) == expected_dims for v in vecs)
     ok(f"Batch embed: {len(vecs)} texts × {len(vecs[0])} dims")
 
     results["embedder"] = True
