@@ -5,65 +5,71 @@ Run once against your Azure PostgreSQL Flexible Server:
     python setup_db.py
 
 Reads credentials from rag_function/local.settings.json automatically.
+
+Authentication:
+    - If POSTGRES_USER contains '@' (Entra ID / AAD user email), fetches a
+      bearer token via DefaultAzureCredential. Run 'az login' first.
+    - Otherwise uses POSTGRES_PASSWORD directly (standard password auth).
 """
 
 import json
 import pathlib
 import sys
+import os
 
 # ── Load credentials from local.settings.json ─────────────────────────────────
 settings_path = pathlib.Path(__file__).parent / "rag_function" / "local.settings.json"
 if settings_path.exists():
     with open(settings_path, encoding="utf-8") as f:
         values = json.load(f).get("Values", {})
-    import os
     for k, v in values.items():
         os.environ.setdefault(k, v)
     print(f"✅ Loaded credentials from {settings_path}")
 else:
     print(f"⚠️  {settings_path} not found — using existing environment variables")
 
-import os
 import psycopg2
 from pgvector.psycopg2 import register_vector
 
 
+# ── Auth: Entra ID token OR plain password ────────────────────────────────────
 def _get_password() -> str:
     """
-    If POSTGRES_USER is an email (Entra ID user), fetch a short-lived
-    Azure AD bearer token and use it as the password.
-    Otherwise use POSTGRES_PASSWORD directly.
+    Detects auth mode from POSTGRES_USER:
+    - Email address (@) → Entra ID bearer token via DefaultAzureCredential
+    - Otherwise         → plain POSTGRES_PASSWORD
     """
     user = os.environ.get("POSTGRES_USER", "")
     if "@" in user:
-        # Entra ID / AAD authentication
         try:
             from azure.identity import DefaultAzureCredential
-            cred = DefaultAzureCredential()
+            print("  Auth mode: Entra ID (fetching token via DefaultAzureCredential)")
+            cred  = DefaultAzureCredential()
             token = cred.get_token("https://ossrdbms-aad.database.windows.net/.default")
-            print("  Using Entra ID token for PostgreSQL auth")
+            print("  ✅ Entra ID token obtained")
             return token.token
         except Exception as e:
-            raise RuntimeError(
-                f"Entra ID token fetch failed: {e}\n"
-                "Make sure azure-identity is installed and you are logged in via \'az login\'."
-            ) from e
-    return os.environ["POSTGRES_PASSWORD"]
+            print(f"  ❌ Entra ID token fetch failed: {e}")
+            print("     → Make sure 'azure-identity' is installed and 'az login' has been run")
+            sys.exit(1)
+    else:
+        print("  Auth mode: password")
+        return os.environ["POSTGRES_PASSWORD"]
 
 
-def get_conn():
+# ── Connection ─────────────────────────────────────────────────────────────────
+def get_conn() -> psycopg2.extensions.connection:
     return psycopg2.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=os.environ.get("POSTGRES_PORT", "5432"),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
+        host    =os.environ["POSTGRES_HOST"],
+        port    =int(os.environ.get("POSTGRES_PORT", "5432")),
+        dbname  =os.environ["POSTGRES_DB"],
+        user    =os.environ["POSTGRES_USER"],
         password=_get_password(),
-        sslmode=os.environ.get("POSTGRES_SSL", "require"),
+        sslmode =os.environ.get("POSTGRES_SSL", "require"),
     )
 
 
-
-# ── DDL statements (run in order) ─────────────────────────────────────────────
+# ── DDL Steps ─────────────────────────────────────────────────────────────────
 STEPS = [
     (
         "Enable pgvector extension",
@@ -122,7 +128,7 @@ def main():
         register_vector(conn)
         print("✅ Connected to PostgreSQL\n")
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        print(f"\n❌ Connection failed: {e}")
         sys.exit(1)
 
     errors = 0
@@ -136,7 +142,7 @@ def main():
                     print(f"  ❌ {label}: {e}")
                     errors += 1
 
-    # ── Verify ────────────────────────────────────────────────────────────
+    # ── Verify ────────────────────────────────────────────────────────────────
     print()
     with conn:
         with conn.cursor() as cur:
@@ -155,13 +161,12 @@ def main():
                 print("⚠️  Table 'nda_projects' not found.")
 
             cur.execute("""
-                SELECT indexname, indexdef
-                FROM pg_indexes
+                SELECT indexname FROM pg_indexes
                 WHERE tablename = 'nda_projects';
             """)
             idxs = cur.fetchall()
             print(f"\nIndexes ({len(idxs)}):")
-            for name, defn in idxs:
+            for (name,) in idxs:
                 print(f"    {name}")
 
     conn.close()
