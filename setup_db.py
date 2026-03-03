@@ -29,7 +29,6 @@ else:
     print(f"⚠️  {settings_path} not found — using existing environment variables")
 
 import psycopg2
-from pgvector.psycopg2 import register_vector
 
 
 # ── Auth: Entra ID token OR plain password ────────────────────────────────────
@@ -125,7 +124,6 @@ def main():
 
     try:
         conn = get_conn()
-        register_vector(conn)
         print("✅ Connected to PostgreSQL\n")
     except Exception as e:
         print(f"\n❌ Connection failed: {e}")
