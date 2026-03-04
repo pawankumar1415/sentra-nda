@@ -221,3 +221,7 @@ local.settings.json
 
 # Useless files
 Sellafield deliverable definition - Sentra 3.docx
+
+# NDA project data files (sensitive — never commit)
+NDA Data/
+**/NDA Data/
