@@ -121,10 +121,20 @@ else:
     excel_path = nda_files[0]
     print(f"  Using: {excel_path}")
     try:
-        from rag_function.ingest import run_ingest
+        from rag_function.ingest import run_ingest, parse_excel
 
         with open(excel_path, "rb") as f:
             file_bytes = f.read()
+
+        # DEBUG — print what columns Excel actually has
+        import io, pandas as pd
+        xl = pd.ExcelFile(io.BytesIO(file_bytes))
+        print(f"  Sheets: {xl.sheet_names}")
+        nda_sheet = next((s for s in xl.sheet_names if "NDA MPPR" in s.upper()), None)
+        if nda_sheet:
+            df_debug = pd.read_excel(xl, sheet_name=nda_sheet, header=2)
+            print(f"  Columns (first 12): {list(df_debug.columns[:12])}")
+            print(f"  Rows loaded: {len(df_debug)}")
 
         result = run_ingest(file_bytes)
         ok(f"Ingested {result['indexed']} projects for period {result.get('period','?')}")
