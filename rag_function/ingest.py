@@ -1,9 +1,12 @@
 """
 rag_function/ingest.py — Excel → clean → embed → upsert to PGVector.
 
-Parses the '5a)NDA MPPR' sheet (columns A–AK), builds one text chunk
-per project row, embeds in batch via Azure OpenAI, and upserts into
-the nda_projects table using ON CONFLICT DO UPDATE.
+The NDA MPPR sheet ('5a)NDA MPPR') is a FORMATTED REPORT, not a tabular
+spreadsheet. Each project spans 2–3 rows:
+  - Data row:      col 0 = empty, col 1 = project name,
+                   col 3 = DCA RAG status (R/A/G), col 7+ = numeric data
+  - Narrative row: col 0 = project name, col 1 = narrative paragraph text
+  - Blank row:     separator
 
 Called by the /api/ingest HTTP route in function_app.py.
 """
@@ -22,25 +25,17 @@ from .embedder import embed_batch
 
 logger = logging.getLogger(__name__)
 
-# Columns expected in '5a)NDA MPPR' (header row is row 3, 0-indexed row 2)
-# These map to the Excel column letters A–AK.
-_REQUIRED_COLS = [
-    "Project / Programme Code",       # A
-    "Project / Programme Title",      # B
-    "Period Short Name",              # F  (approx — varies by period file)
-    "DCA RAG",                        # H
-    "Capability & Capacity RAG",      # I
-    "End Date Variance (Days)",       # T  (schedule)
-    "P50 EAC (£m)",                   # W
-    "P50 EAC Variance",               # X  (vs prev period)
-    "Narrative",                      # AJ or AK
-]
 
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
 def _safe(value: Any, default: str = "") -> str:
     """Convert a cell value to a clean string."""
-    if pd.isna(value):
-        return default
+    try:
+        if pd.isna(value):
+            return default
+    except (TypeError, ValueError):
+        pass
     return str(value).strip()
 
 
@@ -58,74 +53,21 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
-def _build_text_chunk(row: pd.Series, col_map: Dict[str, str]) -> str:
-    """
-    Concatenate all meaningful fields into a single searchable text string.
-    This is what gets embedded — the more context the better.
-    """
-    parts = [
-        f"Project: {_safe(row.get(col_map.get('title', ''), ''))}",
-        f"Code: {_safe(row.get(col_map.get('code', ''), ''))}",
-        f"Period: {_safe(row.get(col_map.get('period', ''), ''))}",
-        f"DCA RAG Status: {_safe(row.get(col_map.get('dca_rag', ''), ''))}",
-        f"Capability & Capacity RAG: {_safe(row.get(col_map.get('cap_rag', ''), ''))}",
-        f"EAC (£m): {_safe(row.get(col_map.get('eac', ''), ''))}",
-        f"EAC Variance (£m): {_safe(row.get(col_map.get('eac_var', ''), ''))}",
-        f"Schedule Variance (days): {_safe(row.get(col_map.get('sched', ''), ''))}",
-        f"Narrative: {_safe(row.get(col_map.get('narrative', ''), ''))}",
-    ]
-    return " | ".join(p for p in parts if not p.endswith(": "))
-
-
-def _find_col(df: pd.DataFrame, keywords: List[str]) -> str:
-    """Find the first column whose name contains all given keywords (case-insensitive)."""
-    for col in df.columns:
-        col_l = col.lower()
-        if all(k.lower() in col_l for k in keywords):
-            return col
-    return ""
-
-
-def _build_col_map(df: pd.DataFrame) -> Dict[str, str]:
-    """
-    Map logical field names to actual DataFrame column names.
-    Uses fuzzy keyword matching to handle slight column name variations
-    across different period Excel files.
-    """
-    return {
-        "code":      _find_col(df, ["code"]),
-        "title":     _find_col(df, ["title"]) or _find_col(df, ["programme"]),
-        "period":    _find_col(df, ["period", "short"]),
-        "dca_rag":   _find_col(df, ["dca"]) or _find_col(df, ["rag"]),
-        "cap_rag":   _find_col(df, ["capability"]),
-        "eac":       _find_col(df, ["p50", "eac", "£"]),
-        "eac_var":   _find_col(df, ["eac", "variance"]),
-        "sched":     _find_col(df, ["end date", "variance", "day"])
-                     or _find_col(df, ["schedule", "variance"]),
-        "narrative": _find_col(df, ["narrative"]),
-    }
-
-
-def _detect_header_row(xl: "pd.ExcelFile", sheet_name: str, max_scan: int = 12) -> int:
-    """
-    Scan first max_scan rows to find the one with recognisable NDA MPPR column keywords.
-    Returns 0-indexed row number to use as header=. Defaults to 2 if not found.
-    """
-    MARKERS = ["period", "project", "programme", "code", "title", "narrative", "rag"]
-    df_raw = pd.read_excel(xl, sheet_name=sheet_name, header=None, nrows=max_scan)
-    for idx, row in df_raw.iterrows():
-        row_text = " ".join(str(v).lower() for v in row if not pd.isna(v))
-        hits = sum(1 for m in MARKERS if m in row_text)
-        if hits >= 3:
-            logger.info("Auto-detected header row at index %d", idx)
-            return int(idx)
-    logger.warning("Could not auto-detect header row — defaulting to row 2")
-    return 2
+# ─────────────────────────────────────────────────────────────────────────────
+# Excel parser — NDA MPPR multi-row format
+# ─────────────────────────────────────────────────────────────────────────────
+# DCA RAG letters that identify a project data row
+_RAG_VALUES = {"r", "a", "g", "-", "n/a", "tbd"}
 
 
 def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
     """
-    Parse the '5a)NDA MPPR' sheet from an Excel file.
+    Parse the '5a)NDA MPPR' sheet from an NDA Executive Project Summary Excel.
+
+    The sheet has NO traditional column headers. Each project spans 2-3 rows:
+      Row N:   col0=empty, col1=project name, col3=DCA (R/A/G), col7+=numeric data
+      Row N+1: col0=project name, col1=narrative text
+      Row N+2: blank separator
 
     Returns:
         (period_name, list_of_project_dicts)
@@ -137,49 +79,99 @@ def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
     )
     if not sheet_name:
         raise ValueError(
-            f"Sheet '5a)NDA MPPR' not found. Sheets present: {xl.sheet_names}"
+            f"Sheet '5a)NDA MPPR' not found. Available: {xl.sheet_names}"
         )
 
-    # Auto-detect which row holds the column headers
-    header_row = _detect_header_row(xl, sheet_name)
-    df = pd.read_excel(xl, sheet_name=sheet_name, header=header_row)
+    # Read raw — no header, no skipping
+    df = pd.read_excel(xl, sheet_name=sheet_name, header=None)
+    logger.info("Raw sheet '%s': %d rows × %d cols", sheet_name, len(df), len(df.columns))
 
-    # Drop fully empty rows/cols; strip newlines from multi-line Excel headers
-    df = df.dropna(how="all").dropna(axis=1, how="all")
-    df.columns = [str(c).replace("\n", " ").strip() for c in df.columns]
+    # Try to extract period from file metadata row (row 0 sometimes has it)
+    period = "UNKNOWN"
 
-    col_map  = _build_col_map(df)
-    period   = ""
-    projects = []
+    projects: List[Dict] = []
 
-    for _, row in df.iterrows():
-        code = _safe(row.get(col_map.get("code", ""), ""))
-        if not code:
-            continue   # skip blank / header-repeat rows
+    for i in range(6, len(df)):  # data rows start at index 6
+        row = df.iloc[i]
 
-        if not period:
-            period = _safe(row.get(col_map.get("period", ""), "UNKNOWN"))
+        # Value in each key column
+        col0 = _safe(row.iloc[0]) if len(row) > 0 else ""
+        col1 = _safe(row.iloc[1]) if len(row) > 1 else ""
+        col3 = _safe(row.iloc[3]) if len(row) > 3 else ""
 
-        project_id = f"{period}|{code}"
-        raw_text   = _build_text_chunk(row, col_map)
+        # A project DATA row has:
+        #   col0 = empty, col1 = project name (non-empty), col3 = RAG letter
+        is_data_row = (
+            col0 == ""
+            and col1 != ""
+            and len(col1) >= 3           # not a number or single char
+            and col3.lower() in _RAG_VALUES
+        )
+
+        if not is_data_row:
+            continue
+
+        project_name = col1
+        dca_rag      = col3.upper()
+
+        # ── Extract numeric EAC/schedule columns ──────────────────────────────
+        # Scan all columns for numeric data (cast those that are numeric)
+        numeric_cols: Dict[int, float] = {}
+        for ci in range(4, len(row)):
+            val = row.iloc[ci]
+            if isinstance(val, (int, float)) and not pd.isna(val):
+                numeric_cols[ci] = float(val)
+
+        # Heuristic positions (may vary slightly between period files):
+        # col 7  → Business Case (P50) cost
+        # col 12 → Current P50 EAC (£m)
+        # col 13 → EAC vs Last Period (£m) — the variance
+        # col 15 → Schedule end-date variance (days)
+        eac_total    = _safe_float(numeric_cols.get(12, numeric_cols.get(13, 0.0)))
+        eac_variance = _safe_float(numeric_cols.get(13, numeric_cols.get(14, 0.0)))
+        sched_days   = _safe_int(numeric_cols.get(15, numeric_cols.get(16, 0)))
+
+        # ── Find the narrative on the next row ────────────────────────────────
+        narrative_text = ""
+        for j in range(i + 1, min(i + 4, len(df))):
+            nrow  = df.iloc[j]
+            nc0   = _safe(nrow.iloc[0]) if len(nrow) > 0 else ""
+            nc1   = _safe(nrow.iloc[1]) if len(nrow) > 1 else ""
+            # Narrative row: col0 matches project name, col1 is long text
+            if nc0 and nc1 and len(nc1) > 40:
+                narrative_text = nc1
+                break
+
+        raw_text = (
+            f"Project: {project_name} | "
+            f"DCA RAG: {dca_rag} | "
+            f"EAC (£m): {eac_total:.3f} | "
+            f"EAC Variance (£m): {eac_variance:.3f} | "
+            f"Schedule Variance (days): {sched_days} | "
+            f"Narrative: {narrative_text}"
+        )
 
         projects.append({
-            "project_id":              project_id,
-            "project_name":            _safe(row.get(col_map.get("title", ""), "")),
+            "project_id":              f"{period}|{project_name}",
+            "project_name":            project_name,
             "period_short_name":       period,
-            "rag_status":              _safe(row.get(col_map.get("dca_rag", ""), "")),
-            "dca_rag_status":          _safe(row.get(col_map.get("dca_rag", ""), "")),
-            "capability_capacity_rag": _safe(row.get(col_map.get("cap_rag", ""), "")),
-            "eac_total":               _safe_float(row.get(col_map.get("eac", ""), 0)),
-            "eac_variance":            _safe_float(row.get(col_map.get("eac_var", ""), 0)),
-            "schedule_variance_days":  _safe_int(row.get(col_map.get("sched", ""), 0)),
-            "narrative_text":          _safe(row.get(col_map.get("narrative", ""), "")),
+            "rag_status":              dca_rag,
+            "dca_rag_status":          dca_rag,
+            "capability_capacity_rag": "",
+            "eac_total":               eac_total,
+            "eac_variance":            eac_variance,
+            "schedule_variance_days":  sched_days,
+            "narrative_text":          narrative_text,
             "raw_content":             raw_text,
         })
 
+    logger.info("Parsed %d projects from '%s'", len(projects), sheet_name)
     return period, projects
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Ingest pipeline
+# ─────────────────────────────────────────────────────────────────────────────
 def run_ingest(file_bytes: bytes) -> Dict:
     """
     Full ingest pipeline:
@@ -198,8 +190,8 @@ def run_ingest(file_bytes: bytes) -> Dict:
     logger.info("Parsed %d projects from period %s", len(projects), period)
 
     # 1 — batch embed all raw_content strings
-    texts    = [p["raw_content"] for p in projects]
-    vectors  = embed_batch(texts)
+    texts   = [p["raw_content"] for p in projects]
+    vectors = embed_batch(texts)
 
     # 2 — upsert to PostgreSQL
     upsert_sql = """
