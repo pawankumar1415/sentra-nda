@@ -113,6 +113,16 @@ CREATE TABLE IF NOT EXISTS nda_projects (
     indexed_at              TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS nda_eac_variance (
+    project_name            TEXT PRIMARY KEY,
+    period_short_name       TEXT,
+    eac_variance            DOUBLE PRECISION,
+    schedule_variance_days  INTEGER,
+    flag                    TEXT,
+    summary_text            TEXT,
+    updated_at              TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
     ON nda_projects
     USING ivfflat ((embedding::halfvec({_EMBEDDING_DIMS})) halfvec_cosine_ops)

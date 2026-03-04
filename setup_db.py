@@ -79,8 +79,8 @@ STEPS = [
         "CREATE EXTENSION IF NOT EXISTS vector;",
     ),
     (
-        "Drop existing table (to recreate with correct vector dimension)",
-        "DROP TABLE IF EXISTS nda_projects;",
+        "Drop existing tables (to recreate with correct vector dimension)",
+        "DROP TABLE IF EXISTS nda_projects; DROP TABLE IF EXISTS nda_eac_variance;",
     ),
     (
         f"Create nda_projects table (vector({EMBEDDING_DIMS}))",
@@ -99,6 +99,20 @@ STEPS = [
             raw_content             TEXT NOT NULL,
             embedding               vector({EMBEDDING_DIMS}),
             indexed_at              TIMESTAMPTZ DEFAULT NOW()
+        );
+        """,
+    ),
+    (
+        "Create nda_eac_variance table",
+        """
+        CREATE TABLE nda_eac_variance (
+            project_name            TEXT PRIMARY KEY,
+            period_short_name       TEXT,
+            eac_variance            DOUBLE PRECISION,
+            schedule_variance_days  INTEGER,
+            flag                    TEXT,
+            summary_text            TEXT,
+            updated_at              TIMESTAMPTZ DEFAULT NOW()
         );
         """,
     ),

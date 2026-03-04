@@ -22,7 +22,6 @@ import os
 import pathlib
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 from openai import AzureOpenAI
 
 from .db import DBConnection
@@ -57,11 +56,10 @@ _EAC_THRESHOLD_MAJOR = 500_000   # £0.5m → needs explicit explanation
 
 def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
     """
-    Read lifecycle_eac_variance.xlsx and return EAC movement data for the
-    given project (and optionally filtered by period).
+    Retrieve EAC movement data for the given project from PostgreSQL.
 
     Returns a dict with keys: eac_variance, schedule_days, flag, summary_text
-    Falls back gracefully if file not found or project not matched.
+    Falls back gracefully if not found.
     """
     default = {
         "eac_variance": 0.0,
@@ -70,63 +68,34 @@ def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
         "summary_text": "EAC variance data not available.",
     }
 
-    eac_path_env = os.environ.get("EAC_VARIANCE_FILE", "")
-    if eac_path_env:
-        eac_path = pathlib.Path(eac_path_env)
-    else:
-        eac_path = (
-            pathlib.Path(__file__).parent.parent / "NDA Data" / "lifecycle_eac_variance.xlsx"
-        )
+    sql = """
+        SELECT eac_variance, schedule_variance_days, flag, summary_text
+        FROM nda_eac_variance
+        WHERE lower(project_name) LIKE lower(%s)
+    """
+    params = [f"%{project_name}%"]
+    
+    if period:
+        sql += " AND lower(period_short_name) = lower(%s)"
+        params.append(period)
+        
+    sql += " LIMIT 1;"
 
-    if not eac_path.exists():
-        logger.warning("EAC variance file not found at %s", eac_path)
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, tuple(params))
+            row = cur.fetchone()
+
+    if not row:
+        logger.warning("EAC variance data not found in DB for %s", project_name)
         return default
 
-    try:
-        df = pd.read_excel(eac_path)
-        # Normalise column names
-        df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
-
-        # Find the project row — try fuzzy match on project name
-        name_col = next(
-            (c for c in df.columns if "project" in c or "programme" in c or "title" in c),
-            None,
-        )
-        if not name_col:
-            return default
-
-        mask = df[name_col].astype(str).str.contains(project_name, case=False, na=False)
-        if period:
-            period_col = next((c for c in df.columns if "period" in c), None)
-            if period_col:
-                mask = mask & df[period_col].astype(str).str.contains(period, case=False, na=False)
-
-        row = df[mask].iloc[0] if mask.any() else None
-        if row is None:
-            return default
-
-        eac_var  = float(row.get("eac_variance", 0) or 0) * 1_000_000  # convert £m → £
-        sched    = int(float(row.get("schedule_variance_days", 0) or 0))
-
-        if abs(eac_var) >= _EAC_THRESHOLD_MAJOR:
-            flag = "major"
-        elif abs(eac_var) >= _EAC_THRESHOLD_HIGH:
-            flag = "material"
-        elif abs(eac_var) >= _EAC_THRESHOLD_LOW:
-            flag = "minor"
-        else:
-            flag = "none"
-
-        summary = (
-            f"EAC variance: £{eac_var/1_000_000:.2f}m ({flag}). "
-            f"Schedule variance: {sched} days."
-        )
-        return {"eac_variance": eac_var, "schedule_days": sched, "flag": flag,
-                "summary_text": summary}
-
-    except Exception as exc:
-        logger.warning("Could not load EAC data: %s", exc)
-        return default
+    return {
+        "eac_variance": row[0],
+        "schedule_days": row[1],
+        "flag": row[2],
+        "summary_text": row[3],
+    }
 
 
 # ── Vector retrieval ──────────────────────────────────────────────────────────

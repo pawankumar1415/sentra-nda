@@ -126,22 +126,39 @@ else:
         with open(excel_path, "rb") as f:
             file_bytes = f.read()
 
-        # DEBUG — print what columns Excel actually has
-        import io, pandas as pd
-        xl = pd.ExcelFile(io.BytesIO(file_bytes))
-        print(f"  Sheets: {xl.sheet_names}")
-        nda_sheet = next((s for s in xl.sheet_names if "NDA MPPR" in s.upper()), None)
-        if nda_sheet:
-            df_debug = pd.read_excel(xl, sheet_name=nda_sheet, header=2)
-            print(f"  Columns (first 12): {list(df_debug.columns[:12])}")
-            print(f"  Rows loaded: {len(df_debug)}")
-
         result = run_ingest(file_bytes)
         ok(f"Ingested {result['indexed']} projects for period {result.get('period','?')}")
         results["ingest"] = True
     except Exception as e:
         fail("Ingest pipeline failed", e)
         results["ingest"] = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEST 3b — EAC Ingest Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+header("TEST 3b — EAC Ingest Pipeline")
+
+eac_candidates = list(pathlib.Path(".").glob("**/lifecycle_eac_variance.xlsx"))
+
+if not eac_candidates:
+    print(f"  {SKIP} No lifecycle_eac_variance.xlsx found")
+    results["ingest_eac"] = None
+else:
+    eac_path = eac_candidates[0]
+    print(f"  Using: {eac_path}")
+    try:
+        from rag_function.ingest_eac import run_ingest_eac
+
+        with open(eac_path, "rb") as f:
+            file_bytes = f.read()
+
+        result = run_ingest_eac(file_bytes)
+        ok(f"Ingested {result['indexed']} EAC records into nda_eac_variance table")
+        results["ingest_eac"] = True
+    except Exception as e:
+        fail("EAC Ingest pipeline failed", e)
+        results["ingest_eac"] = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────

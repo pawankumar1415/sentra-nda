@@ -17,6 +17,7 @@ import azure.functions as func
 
 from .db import ensure_schema
 from .ingest import run_ingest
+from .ingest_eac import run_ingest_eac
 from .validate import run_validate
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,50 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-# ── Route 2: Validate ─────────────────────────────────────────────────────────
+# ── Route 2: Ingest EAC ───────────────────────────────────────────────────────
+@app.route(route="ingest-eac", methods=["POST"])
+def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/ingest-eac
+
+    Accepts an Excel file (lifecycle_eac_variance.xlsx) either as:
+      - multipart/form-data with field name 'file'
+      - raw binary body
+    """
+    logger.info("POST /api/ingest-eac — request received")
+    
+    try:
+        file_bytes: bytes = b""
+        files = req.files
+        if files and "file" in files:
+            file_bytes = files["file"].read()
+        else:
+            file_bytes = req.get_body()
+
+        if not file_bytes:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided"}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        result = run_ingest_eac(file_bytes)
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        logger.exception("EAC Ingest pipeline failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+# ── Route 3: Validate ─────────────────────────────────────────────────────────
 @app.route(route="validate", methods=["POST"])
 def validate(req: func.HttpRequest) -> func.HttpResponse:
     """
