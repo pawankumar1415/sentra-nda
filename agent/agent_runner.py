@@ -108,25 +108,37 @@ def _get_or_create_agent(client: AIProjectClient):
 
     logger.info("Creating new agent: %s", AGENT_NAME)
 
-    # ── Tool 1: Azure AI Search ───────────────────────────────────────────
-    # AzureAISearchTool exposes .definitions (list) and .resources (object)
-    # This is the correct pattern per Microsoft docs for azure-ai-agents 1.1.0
-    ai_search = AzureAISearchTool(
-        index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
-        index_name=AZURE_SEARCH_INDEX_NAME,
-    )
+    use_ai_search = os.environ.get("USE_AI_SEARCH", "false").lower() == "true"
 
-    # ── Tool 2: Python Function Tools ─────────────────────────────────────
-    function_tool = FunctionTool(functions=AGENT_TOOLS)
+    # ── Tool 1: Azure AI Search (conditional) ────────────────────────────────
+    tool_definitions = []
+    tool_resources   = None
 
-    # Combine tool definitions; AI Search provides its own tool_resources
-    agent = agents_client.create_agent(
+    if use_ai_search:
+        ai_search = AzureAISearchTool(
+            index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
+            index_name=AZURE_SEARCH_INDEX_NAME,
+        )
+        tool_definitions += ai_search.definitions
+        tool_resources    = ai_search.resources
+        logger.info("AI Search tool ENABLED")
+    else:
+        logger.info("AI Search tool DISABLED (USE_AI_SEARCH != true)")
+
+    # ── Tool 2: Python Function Tools ─────────────────────────────────────────
+    function_tool     = FunctionTool(functions=AGENT_TOOLS)
+    tool_definitions += function_tool.definitions
+
+    create_kwargs = dict(
         model=MODEL_DEPLOYMENT_NAME,
         name=AGENT_NAME,
         instructions=get_system_prompt(),
-        tools=ai_search.definitions + function_tool.definitions,
-        tool_resources=ai_search.resources,
+        tools=tool_definitions,
     )
+    if tool_resources:
+        create_kwargs["tool_resources"] = tool_resources
+
+    agent = agents_client.create_agent(**create_kwargs)
     logger.info("Agent created: %s", agent.id)
     return agent
 
