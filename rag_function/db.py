@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS nda_projects (
 
 CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
     ON nda_projects
-    USING ivfflat (embedding vector_cosine_ops)
+    USING ivfflat ((embedding::halfvec({_EMBEDDING_DIMS})) halfvec_cosine_ops)
     WITH (lists = 50);
 """
 
