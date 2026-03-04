@@ -272,7 +272,7 @@ def run_validate(
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user",   "content": user_message},
         ],
-        temperature=0.1,    # deterministic validation output
+        temperature=1,      # gpt-5.1-chat only supports default temperature (1)
         response_format={"type": "json_object"},
     )
 
