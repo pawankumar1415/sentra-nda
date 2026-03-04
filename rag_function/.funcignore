@@ -1,0 +1,13 @@
+.vscode/
+.idea/
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+local.settings.json
+*.xlsx
+*.csv
+.git/
+.DS_Store
