@@ -106,6 +106,23 @@ def _build_col_map(df: pd.DataFrame) -> Dict[str, str]:
     }
 
 
+def _detect_header_row(xl: "pd.ExcelFile", sheet_name: str, max_scan: int = 12) -> int:
+    """
+    Scan first max_scan rows to find the one with recognisable NDA MPPR column keywords.
+    Returns 0-indexed row number to use as header=. Defaults to 2 if not found.
+    """
+    MARKERS = ["period", "project", "programme", "code", "title", "narrative", "rag"]
+    df_raw = pd.read_excel(xl, sheet_name=sheet_name, header=None, nrows=max_scan)
+    for idx, row in df_raw.iterrows():
+        row_text = " ".join(str(v).lower() for v in row if not pd.isna(v))
+        hits = sum(1 for m in MARKERS if m in row_text)
+        if hits >= 3:
+            logger.info("Auto-detected header row at index %d", idx)
+            return int(idx)
+    logger.warning("Could not auto-detect header row — defaulting to row 2")
+    return 2
+
+
 def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
     """
     Parse the '5a)NDA MPPR' sheet from an Excel file.
@@ -123,11 +140,13 @@ def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
             f"Sheet '5a)NDA MPPR' not found. Sheets present: {xl.sheet_names}"
         )
 
-    # Header is on row 3 (0-indexed row 2) in typical NDA files
-    df = pd.read_excel(xl, sheet_name=sheet_name, header=2)
+    # Auto-detect which row holds the column headers
+    header_row = _detect_header_row(xl, sheet_name)
+    df = pd.read_excel(xl, sheet_name=sheet_name, header=header_row)
 
-    # Drop fully empty rows
-    df = df.dropna(how="all")
+    # Drop fully empty rows/cols; strip newlines from multi-line Excel headers
+    df = df.dropna(how="all").dropna(axis=1, how="all")
+    df.columns = [str(c).replace("\n", " ").strip() for c in df.columns]
 
     col_map  = _build_col_map(df)
     period   = ""
