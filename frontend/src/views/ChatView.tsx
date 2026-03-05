@@ -101,52 +101,82 @@ const ChatView = () => {
             <div className="messages-container" style={{ flex: 1, overflowY: 'auto', padding: '40px 20px' }}>
                 <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-                    {messages.map((msg) => (
-                        <div
-                            key={msg.id}
-                            style={{
-                                display: 'flex',
-                                gap: '16px',
-                                background: msg.role === 'assistant' ? 'var(--bg-secondary)' : 'transparent',
-                                padding: '24px',
-                                borderRadius: '8px',
-                                border: msg.role === 'assistant' ? '1px solid var(--border-color)' : 'none'
-                            }}
-                        >
-                            <div style={{ flexShrink: 0 }}>
-                                {msg.role === 'assistant' ? (
-                                    <div style={{ background: 'var(--accent-blue)', width: '30px', height: '30px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                        <Bot size={18} />
+                    {messages.map((msg) => {
+                        const isUser = msg.role === 'user';
+                        return (
+                            <div
+                                key={msg.id}
+                                style={{
+                                    display: 'flex',
+                                    width: '100%',
+                                    justifyContent: isUser ? 'flex-end' : 'flex-start',
+                                }}
+                            >
+                                <div style={{
+                                    display: 'flex',
+                                    gap: '12px',
+                                    flexDirection: isUser ? 'row-reverse' : 'row',
+                                    maxWidth: '85%',
+                                }}>
+                                    <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                                        {isUser ? (
+                                            <div style={{ background: 'var(--accent-blue)', width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+                                                <User size={16} />
+                                            </div>
+                                        ) : (
+                                            <div style={{ background: 'var(--bg-tertiary)', width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                                                <Bot size={16} />
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div style={{ background: 'var(--bg-tertiary)', width: '30px', height: '30px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)' }}>
-                                        <User size={18} />
+                                    <div style={{
+                                        background: isUser ? 'var(--accent-blue)' : 'var(--bg-secondary)',
+                                        color: isUser ? 'white' : 'var(--text-primary)',
+                                        padding: '16px 20px',
+                                        borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                                        border: isUser ? 'none' : '1px solid var(--border-color)',
+                                        boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                                        overflowX: 'auto',
+                                        lineHeight: '1.6'
+                                    }}>
+                                        <ReactMarkdown
+                                            components={{
+                                                p: ({ node, ...props }) => <p style={{ margin: '0 0 1em 0', color: 'inherit' }} {...props} />,
+                                                a: ({ node, ...props }) => <a style={{ color: isUser ? 'white' : 'var(--accent-blue)', textDecoration: 'underline' }} {...props} />,
+                                                table: ({ node, ...props }) => <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '1em', fontSize: '0.9rem', color: isUser ? 'white' : 'var(--text-primary)' }} {...props} />,
+                                                th: ({ node, ...props }) => <th style={{ border: '1px solid', borderColor: isUser ? 'rgba(255,255,255,0.2)' : 'var(--border-highlight)', padding: '10px', background: isUser ? 'rgba(0,0,0,0.1)' : 'var(--bg-primary)', textAlign: 'left', fontWeight: '600' }} {...props} />,
+                                                td: ({ node, ...props }) => <td style={{ border: '1px solid', borderColor: isUser ? 'rgba(255,255,255,0.2)' : 'var(--border-highlight)', padding: '10px', background: isUser ? 'transparent' : 'var(--bg-secondary)' }} {...props} />,
+                                                strong: ({ node, ...props }) => <strong style={{ fontWeight: '600', color: 'inherit' }} {...props} />
+                                            }}
+                                        >
+                                            {msg.content}
+                                        </ReactMarkdown>
                                     </div>
-                                )}
+                                </div>
                             </div>
-                            <div style={{ flex: 1, lineHeight: '1.6', color: 'var(--text-primary)', overflowX: 'auto' }}>
-                                <ReactMarkdown
-                                    components={{
-                                        p: ({ node, ...props }) => <p style={{ margin: '0 0 1em 0' }} {...props} />,
-                                        table: ({ node, ...props }) => <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '1em' }} {...props} />,
-                                        th: ({ node, ...props }) => <th style={{ border: '1px solid var(--border-color)', padding: '8px', background: 'var(--bg-primary)', textAlign: 'left' }} {...props} />,
-                                        td: ({ node, ...props }) => <td style={{ border: '1px solid var(--border-color)', padding: '8px' }} {...props} />
-                                    }}
-                                >
-                                    {msg.content}
-                                </ReactMarkdown>
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
 
                     {isLoading && (
-                        <div style={{ display: 'flex', gap: '16px', padding: '24px' }}>
-                            <div style={{ background: 'var(--accent-blue)', width: '30px', height: '30px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                                <Bot size={18} />
-                            </div>
-                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
-                                <Loader2 size={16} className="spin" style={{ animation: 'spin 1s linear infinite', marginRight: '8px' }} />
-                                Thinking...
+                        <div style={{ display: 'flex', width: '100%', justifyContent: 'flex-start' }}>
+                            <div style={{ display: 'flex', gap: '12px', flexDirection: 'row', maxWidth: '85%' }}>
+                                <div style={{ flexShrink: 0, marginTop: '4px' }}>
+                                    <div style={{ background: 'var(--bg-tertiary)', width: '30px', height: '30px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
+                                        <Bot size={16} />
+                                    </div>
+                                </div>
+                                <div style={{
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-secondary)',
+                                    padding: '16px 20px',
+                                    borderRadius: '16px 16px 16px 4px',
+                                    border: '1px solid var(--border-color)',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                }}>
+                                    <Loader2 size={16} className="spin" style={{ animation: 'spin 1s linear infinite', marginRight: '8px' }} />
+                                    Thinking...
+                                </div>
                             </div>
                         </div>
                     )}
