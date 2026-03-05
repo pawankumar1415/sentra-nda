@@ -82,10 +82,10 @@ const ValidateView = () => {
                 </div>
             )}
 
-            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px' }}>
+            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px', height: 'calc(100vh - 180px)' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section">
+                <div className="input-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                     <div className="card">
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
@@ -155,9 +155,9 @@ const ValidateView = () => {
                 </div>
 
                 {/* Right Column: Results */}
-                <div className="results-section">
+                <div className="results-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                     {!result && !loading && (
-                        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.5, padding: '60px 20px' }}>
+                        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', opacity: 0.5, padding: '60px 20px' }}>
                             <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
                             <p>Submit a narrative to see compliance results.</p>
                         </div>
