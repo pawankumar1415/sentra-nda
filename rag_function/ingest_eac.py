@@ -29,12 +29,24 @@ def parse_eac_excel(file_bytes: bytes) -> List[Dict]:
     
     # Normalise column names
     df.columns = [str(c).strip().lower().replace(" ", "_").replace("\n", "") for c in df.columns]
+    logger.info("EAC Excel columns (normalised): %s", list(df.columns))
 
-    name_col = next((c for c in df.columns if "project" in c or "programme" in c or "title" in c), None)
+    name_col = next((c for c in df.columns if "project" in c and "name" in c), None)
+    if not name_col:
+        name_col = next((c for c in df.columns if "project" in c or "programme" in c or "title" in c), None)
     if not name_col:
         raise ValueError(f"Could not find project name column. Available columns: {list(df.columns)}")
 
     period_col = next((c for c in df.columns if "period" in c), None)
+
+    # Smart column detection — search for columns containing these keywords
+    eac_var_col = next((c for c in df.columns if "eac" in c and "variance" in c), None)
+    sched_var_col = next((c for c in df.columns if "variance" in c and "day" in c), None)
+    if not sched_var_col:
+        sched_var_col = next((c for c in df.columns if "schedule" in c and "variance" in c), None)
+
+    logger.info("Detected columns — EAC variance: %s, Schedule variance: %s",
+                eac_var_col or "(not found)", sched_var_col or "(not found)")
 
     projects = []
     
@@ -46,12 +58,12 @@ def parse_eac_excel(file_bytes: bytes) -> List[Dict]:
         period = str(row[period_col]).strip() if period_col and not pd.isna(row[period_col]) else ""
         
         try:
-            eac_var_m = float(row.get("eac_variance", 0) or 0)
+            eac_var_m = float(row[eac_var_col]) if eac_var_col and not pd.isna(row[eac_var_col]) else 0.0
         except (TypeError, ValueError):
             eac_var_m = 0.0
             
         try:
-            sched = int(float(row.get("schedule_variance_days", 0) or 0))
+            sched = int(float(row[sched_var_col])) if sched_var_col and not pd.isna(row[sched_var_col]) else 0
         except (TypeError, ValueError):
             sched = 0
 
