@@ -59,3 +59,30 @@ export const ingestFile = async (key: string, file: File, type: 'mppr' | 'eac') 
 
     return response.json();
 };
+
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+export const sendChatMessage = async (key: string, question: string, history: ChatMessage[]) => {
+    const url = `${API_BASE_URL}/chat${getAuthParams(key)}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            question,
+            history
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    return response.json();
+};

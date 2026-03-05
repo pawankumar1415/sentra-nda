@@ -19,6 +19,7 @@ from db import ensure_schema
 from ingest import run_ingest
 from ingest_eac import run_ingest_eac
 from validate import run_validate
+from chat import run_chat
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,60 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception as exc:
         logger.exception("Validation pipeline failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+# ── Route 4: Chat ─────────────────────────────────────────────────────────────
+@app.route(route="chat", methods=["POST"])
+def chat(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/chat
+
+    Request body (JSON):
+    {
+        "question": "What is the portfolio health?",
+        "history": [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"}
+        ]
+    }
+
+    Returns JSON with the markdown-formatted 'answer'.
+    """
+    logger.info("POST /api/chat — request received")
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be valid JSON"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    question = body.get("question", "").strip()
+    history = body.get("history", [])
+
+    if not question:
+        return func.HttpResponse(
+            json.dumps({"error": "'question' field is required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        result = run_chat(question=question, history=history)
+        return func.HttpResponse(
+            json.dumps(result, indent=2),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception as exc:
+        logger.exception("Chat pipeline failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Internal error", "detail": str(exc)}),
             status_code=500,

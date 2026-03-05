@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2 } from 'lucide-react';
+import { Send, User, Bot, Loader2, Key } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { sendChatMessage } from '../services/api';
+import type { ChatMessage as ApiChatMessage } from '../services/api';
 
-interface ChatMessage {
+interface ChatMessage extends ApiChatMessage {
     id: string;
-    role: 'user' | 'assistant';
-    content: string;
 }
 
 const ChatView = () => {
@@ -27,8 +28,14 @@ const ChatView = () => {
         scrollToBottom();
     }, [messages, isLoading]);
 
+    const [apiKey, setApiKey] = useState('');
+
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
+        if (!apiKey) {
+            alert("Please enter your Azure Function API Key at the top first.");
+            return;
+        }
 
         const userMsg: ChatMessage = {
             id: Date.now().toString(),
@@ -36,20 +43,36 @@ const ChatView = () => {
             content: input.trim()
         };
 
-        setMessages(prev => [...prev, userMsg]);
+        const newMessages = [...messages, userMsg];
+        setMessages(newMessages);
         setInput('');
         setIsLoading(true);
 
-        // Simulate an API call to the future Python /api/chat endpoint
-        setTimeout(() => {
+        try {
+            // Send history excluding the new user message (we send it separate, or send all)
+            // The API expects: { question: string, history: ChatMessage[] }
+            // Let's send the previous history up to the user message
+            const historyToSent = messages.map(m => ({ role: m.role, content: m.content }));
+
+            const response = await sendChatMessage(apiKey, userMsg.content, historyToSent);
+
             const assistantMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `This is a simulated response. In Phase 4, the Python backend will use the RAG system to answer: "${userMsg.content}"\n\nFor example, if you asked about portfolio health, I would query the Vector DB for P08 and return a summary of Red/Amber/Green projects.`
+                content: response.answer
             };
             setMessages(prev => [...prev, assistantMsg]);
+
+        } catch (error: any) {
+            const errorMsg: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: `**Error connecting to RAG Agent:** ${error.message}`
+            };
+            setMessages(prev => [...prev, errorMsg]);
+        } finally {
             setIsLoading(false);
-        }, 1500);
+        }
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -61,6 +84,18 @@ const ChatView = () => {
 
     return (
         <div className="chat-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+            {/* Top API Key Bar */}
+            <div style={{ background: 'var(--bg-primary)', padding: '12px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Key size={16} style={{ color: 'var(--text-secondary)' }} />
+                <input
+                    type="password"
+                    placeholder="Enter Global Azure Function Key..."
+                    style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', width: '300px', fontSize: '0.9rem' }}
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                />
+            </div>
 
             {/* Messages Area */}
             <div className="messages-container" style={{ flex: 1, overflowY: 'auto', padding: '40px 20px' }}>
@@ -89,8 +124,17 @@ const ChatView = () => {
                                     </div>
                                 )}
                             </div>
-                            <div style={{ flex: 1, lineHeight: '1.6', color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
-                                {msg.content}
+                            <div style={{ flex: 1, lineHeight: '1.6', color: 'var(--text-primary)', overflowX: 'auto' }}>
+                                <ReactMarkdown
+                                    components={{
+                                        p: ({ node, ...props }) => <p style={{ margin: '0 0 1em 0' }} {...props} />,
+                                        table: ({ node, ...props }) => <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: '1em' }} {...props} />,
+                                        th: ({ node, ...props }) => <th style={{ border: '1px solid var(--border-color)', padding: '8px', background: 'var(--bg-primary)', textAlign: 'left' }} {...props} />,
+                                        td: ({ node, ...props }) => <td style={{ border: '1px solid var(--border-color)', padding: '8px' }} {...props} />
+                                    }}
+                                >
+                                    {msg.content}
+                                </ReactMarkdown>
                             </div>
                         </div>
                     ))}

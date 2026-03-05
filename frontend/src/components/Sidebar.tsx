@@ -1,4 +1,3 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { MessageSquare, FileText, Settings, Activity } from 'lucide-react';
 
