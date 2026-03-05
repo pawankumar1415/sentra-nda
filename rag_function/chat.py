@@ -50,7 +50,6 @@ def _detect_intent(question: str) -> Dict[str, Any]:
                 {"role": "system", "content": _INTENT_PROMPT},
                 {"role": "user", "content": question}
             ],
-            temperature=0,
             response_format={"type": "json_object"}
         )
         result = json.loads(resp.choices[0].message.content)
@@ -183,8 +182,7 @@ def run_chat(question: str, history: List[Dict[str, str]]) -> Dict:
     gpt = _get_gpt_client()
     resp = gpt.chat.completions.create(
         model=_chat_deployment(),
-        messages=messages,
-        temperature=0.3
+        messages=messages
     )
 
     answer = resp.choices[0].message.content
