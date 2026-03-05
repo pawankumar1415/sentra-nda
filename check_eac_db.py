@@ -51,12 +51,12 @@ def main():
             print("\n" + "-" * 60)
             print("Testing validate.py query for project 'Sellafield':")
             cur.execute(
-                "SELECT eac_variance, schedule_variance_days FROM nda_eac_variance WHERE lower(project_name) LIKE lower(%s)",
+                "SELECT eac_variance, schedule_variance_days, period_short_name FROM nda_eac_variance WHERE lower(project_name) LIKE lower(%s)",
                 ("%Sellafield%",)
             )
             match = cur.fetchone()
             if match:
-                print(f"✅ MATCH FOUND! EAC: £{match[0]:,.2f}, Sched: {match[1]}")
+                print(f"✅ MATCH FOUND! EAC: £{match[0]:,.2f}, Sched: {match[1]}, Period in DB: '{match[2]}'")
             else:
                 print("❌ NO MATCH FOUND for LIKE '%Sellafield%'")
 
