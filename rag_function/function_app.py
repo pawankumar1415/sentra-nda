@@ -15,10 +15,10 @@ import logging
 
 import azure.functions as func
 
-from .db import ensure_schema
-from .ingest import run_ingest
-from .ingest_eac import run_ingest_eac
-from .validate import run_validate
+from db import ensure_schema
+from ingest import run_ingest
+from ingest_eac import run_ingest_eac
+from validate import run_validate
 
 logger = logging.getLogger(__name__)
 

@@ -14,7 +14,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from .db import DBConnection
+from db import DBConnection
 
 logger = logging.getLogger(__name__)
 

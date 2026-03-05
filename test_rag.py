@@ -19,6 +19,9 @@ import pathlib
 import sys
 import os
 
+# ── Add rag_function/ to sys.path so absolute imports work ───────────────────
+sys.path.insert(0, str(pathlib.Path(__file__).parent / "rag_function"))
+
 # ── Load local.settings.json ─────────────────────────────────────────────────
 settings_path = pathlib.Path(__file__).parent / "rag_function" / "local.settings.json"
 if settings_path.exists():
@@ -53,7 +56,7 @@ results = {}
 # ─────────────────────────────────────────────────────────────────────────────
 header("TEST 1 — PostgreSQL Connection & Schema")
 try:
-    from rag_function.db import DBConnection, ensure_schema
+    from db import DBConnection, ensure_schema
 
     ensure_schema()
     ok("ensure_schema() ran successfully")
@@ -81,7 +84,7 @@ except Exception as e:
 # ─────────────────────────────────────────────────────────────────────────────
 header("TEST 2 — Azure OpenAI Embedder")
 try:
-    from rag_function.embedder import embed, embed_batch
+    from embedder import embed, embed_batch
 
     sample_text = "The SRO DCA remains amber because of ongoing schedule risk."
     vec = embed(sample_text)
@@ -121,7 +124,7 @@ else:
     excel_path = nda_files[0]
     print(f"  Using: {excel_path}")
     try:
-        from rag_function.ingest import run_ingest, parse_excel
+        from ingest import run_ingest, parse_excel
 
         with open(excel_path, "rb") as f:
             file_bytes = f.read()
@@ -148,7 +151,7 @@ else:
     eac_path = eac_candidates[0]
     print(f"  Using: {eac_path}")
     try:
-        from rag_function.ingest_eac import run_ingest_eac
+        from ingest_eac import run_ingest_eac
 
         with open(eac_path, "rb") as f:
             file_bytes = f.read()
@@ -180,7 +183,7 @@ if results.get("db") and results.get("embedder"):
     )
 
     try:
-        from rag_function.validate import run_validate
+        from validate import run_validate
 
         result = run_validate(
             narrative=SAMPLE_NARRATIVE,

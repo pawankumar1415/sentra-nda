@@ -20,8 +20,8 @@ from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 
-from .db import DBConnection
-from .embedder import embed_batch
+from db import DBConnection
+from embedder import embed_batch
 
 logger = logging.getLogger(__name__)
 

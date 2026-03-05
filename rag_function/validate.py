@@ -24,8 +24,8 @@ from typing import Any, Dict, List, Optional
 
 from openai import AzureOpenAI
 
-from .db import DBConnection
-from .embedder import embed
+from db import DBConnection
+from embedder import embed
 
 logger = logging.getLogger(__name__)
 
