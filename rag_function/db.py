@@ -30,12 +30,14 @@ _pool: Optional[pg_pool.ThreadedConnectionPool] = None
 
 def _get_password() -> str:
     """
-    Return the PostgreSQL password.
-    If POSTGRES_USE_ENTRA is set to 'true', fetch an Azure AD bearer token.
-    Otherwise use POSTGRES_PASSWORD directly.
+    If POSTGRES_USER is an email (Entra ID user), fetch a short-lived
+    Azure AD bearer token via DefaultAzureCredential.
+    On Azure this uses the Function App's Managed Identity.
+    Locally this uses 'az login' credentials.
+    Otherwise use POSTGRES_PASSWORD directly (standard password auth).
     """
-    use_entra = os.environ.get("POSTGRES_USE_ENTRA", "").lower() == "true"
-    if use_entra:
+    user = os.environ.get("POSTGRES_USER", "")
+    if "@" in user:
         from azure.identity import DefaultAzureCredential
         cred = DefaultAzureCredential()
         token = cred.get_token("https://ossrdbms-aad.database.windows.net/.default")
