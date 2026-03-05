@@ -86,6 +86,19 @@ def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
             cur.execute(sql, tuple(params))
             row = cur.fetchone()
 
+            # Fallback: If no match with period, try just the project name
+            # since EAC variance periods might be formatted differently (e.g. '2025-P11')
+            if not row and period:
+                logger.info("EAC not found for '%s' in period '%s'. Trying without period...", project_name, period)
+                fallback_sql = """
+                    SELECT eac_variance, schedule_variance_days, flag, summary_text
+                    FROM nda_eac_variance
+                    WHERE lower(project_name) LIKE lower(%s)
+                    ORDER BY period_short_name DESC LIMIT 1;
+                """
+                cur.execute(fallback_sql, (f"%{project_name}%",))
+                row = cur.fetchone()
+
     if not row:
         logger.warning("EAC variance data not found in DB for %s", project_name)
         return default
