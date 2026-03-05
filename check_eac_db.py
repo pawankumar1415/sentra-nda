@@ -14,14 +14,20 @@ def main():
     # Load credentials from local.settings.json
     settings_path = pathlib.Path(__file__).parent / "rag_function" / "local.settings.json"
     with open(settings_path) as f:
-        config = json.load(f)["Values"]
+        for k, v in json.load(f)["Values"].items():
+            os.environ.setdefault(k, v)
+            
+    # Need to add rag_function to sys.path so we can import db.py
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).parent / "rag_function"))
+    from db import _get_password
         
     print("Connecting to PostgreSQL...")
     conn = psycopg2.connect(
-        host=config["POSTGRES_HOST"],
-        user=config["POSTGRES_USER"],
-        password=config["POSTGRES_PASSWORD"],
-        dbname=config["POSTGRES_DB"],
+        host=os.environ["POSTGRES_HOST"],
+        user=os.environ["POSTGRES_USER"],
+        password=_get_password(),
+        dbname=os.environ["POSTGRES_DB"],
         sslmode="require"
     )
     
