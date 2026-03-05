@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2 } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit } from 'lucide-react';
 import { validateNarrative } from '../services/api';
 
 const ValidateView = () => {
@@ -210,18 +210,24 @@ const ValidateView = () => {
                                 </div>
                             )}
 
-                            {/* AI Suggestions */}
-                            {result.suggestions && result.suggestions.length > 0 && (
+                            {/* AI Rewrite */}
+                            {result.rewritten_narrative && (
                                 <div className="card glass-panel" style={{ background: 'var(--accent-blue-glow)', borderColor: 'var(--accent-blue)' }}>
                                     <h2 className="card-title" style={{ color: 'var(--accent-blue)' }}>
-                                        ✨ AI Suggested Improvements
+                                        ✨ AI Rewritten Narrative
                                     </h2>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                        {result.suggestions.map((sug: string, idx: number) => (
-                                            <div key={idx} style={{ background: 'var(--bg-primary)', padding: '16px', borderRadius: '8px', lineHeight: '1.5', color: 'var(--text-primary)', borderLeft: '3px solid var(--accent-blue)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
-                                                {sug}
-                                            </div>
-                                        ))}
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                        <div style={{ background: 'var(--bg-primary)', padding: '16px', borderRadius: '8px', lineHeight: '1.6', color: 'var(--text-primary)', borderLeft: '3px solid var(--accent-blue)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', fontSize: '0.95rem' }}>
+                                            {result.rewritten_narrative}
+                                        </div>
+                                        <button
+                                            onClick={() => setNarrative(result.rewritten_narrative)}
+                                            className="btn btn-primary"
+                                            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.9rem' }}
+                                        >
+                                            <FileEdit size={16} />
+                                            Use This Rewrite
+                                        </button>
                                     </div>
                                 </div>
                             )}

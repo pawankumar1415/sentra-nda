@@ -183,7 +183,7 @@ Always respond in this exact JSON format:
     "data_flag": <"none"|"minor"|"material"|"major">,
     "issues": [<list of data movement issues not addressed>]
   },
-  "suggestions": [<up to 3 specific rewritten sentences using Good Practice templates>],
+  "rewritten_narrative": <"A complete, fully rewritten version of the narrative that fixes all issues and reads perfectly as a single paragraph.">,
   "overall_verdict": <"PASS"|"PASS_WITH_WARNINGS"|"FAIL">
 }"""
 
