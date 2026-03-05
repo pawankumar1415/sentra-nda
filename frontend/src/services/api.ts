@@ -1,0 +1,61 @@
+export const API_BASE_URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api";
+
+export const getAuthParams = (key: string) => {
+    return key ? `?code=${encodeURIComponent(key)}` : '';
+};
+
+export interface ValidateRequest {
+    narrative: string;
+    project_name: string;
+    period: string;
+}
+
+export const validateNarrative = async (key: string, data: ValidateRequest) => {
+    const url = `${API_BASE_URL}/validate${getAuthParams(key)}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            narrative: data.narrative,
+            project_name: data.project_name,
+            period: data.period,
+            top_k: 5
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    return response.json();
+};
+
+export const ingestFile = async (key: string, file: File, type: 'mppr' | 'eac') => {
+    const endpoint = type === 'mppr' ? 'ingest' : 'ingest-eac';
+
+    // Create URLSearchParams to securely handle query parameters
+    const params = new URLSearchParams();
+    if (key) params.append('code', key);
+    params.append('filename', file.name);
+
+    const url = `${API_BASE_URL}/${endpoint}?${params.toString()}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/octet-stream',
+        },
+        body: file,
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    return response.json();
+};
