@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, Loader2, Key } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { sendChatMessage } from '../services/api';
 import type { ChatMessage as ApiChatMessage } from '../services/api';
 
@@ -140,6 +141,7 @@ const ChatView = () => {
                                         lineHeight: '1.6'
                                     }}>
                                         <ReactMarkdown
+                                            remarkPlugins={[remarkGfm]}
                                             components={{
                                                 p: ({ node, ...props }) => <p style={{ margin: '0 0 1em 0', color: 'inherit' }} {...props} />,
                                                 a: ({ node, ...props }) => <a style={{ color: isUser ? 'white' : 'var(--accent-blue)', textDecoration: 'underline' }} {...props} />,
