@@ -68,12 +68,11 @@ const ValidateView = () => {
                 </div>
             )}
 
-            {/* Flex container to constrain height */}
-            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: '500px 1fr', gap: '32px', height: 'calc(100vh - 200px)', minHeight: '600px' }}>
+            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto', paddingRight: '8px' }}>
-                    <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div className="input-section">
+                    <div className="card">
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
                             <div className="form-group">
@@ -141,10 +140,10 @@ const ValidateView = () => {
                     </div>
                 </div>
 
-                {/* Right Column: Results (Scrollable) */}
-                <div className="results-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                {/* Right Column: Results */}
+                <div className="results-section">
                     {!result && !loading && (
-                        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', opacity: 0.5 }}>
+                        <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', opacity: 0.5, padding: '60px 20px' }}>
                             <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
                             <p>Submit a narrative to see compliance results.</p>
                         </div>
