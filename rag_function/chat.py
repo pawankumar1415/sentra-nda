@@ -104,27 +104,23 @@ def _get_eac_data(project_names: List[str]) -> str:
 
 def _vector_search(question: str, project_names: List[str], top_k: int = 5) -> str:
     """Standard pgvector cosine similarity search."""
-    query_vector = embed(question)
-    
+    # Append detected project names to the query to heavily weight the embedding towards them
+    enhanced_query = question
     if project_names:
-        sql = """
-            SELECT project_name, period_short_name, raw_content,
-                   1 - (embedding <=> %s::vector) AS score
-            FROM nda_projects
-            WHERE lower(project_name) LIKE lower(%s)
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s;
-        """
-        params = (query_vector, f"%{project_names[0]}%", query_vector, top_k)
-    else:
-        sql = """
-            SELECT project_name, period_short_name, raw_content,
-                   1 - (embedding <=> %s::vector) AS score
-            FROM nda_projects
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s;
-        """
-        params = (query_vector, query_vector, top_k)
+        enhanced_query += " " + " ".join(project_names)
+        
+    query_vector = embed(enhanced_query)
+    
+    # We remove the strict `LIKE` filter because acronyms (like "BEP") might not physically match 
+    # the project_name ("Box Encapsulation Plant") in the DB, but the vector embedding will find it.
+    sql = """
+        SELECT project_name, period_short_name, raw_content,
+               1 - (embedding <=> %s::vector) AS score
+        FROM nda_projects
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s;
+    """
+    params = (query_vector, query_vector, top_k)
 
     context = "RETRIEVED NARRATIVE CONTEXT:\n"
     with DBConnection() as conn:
