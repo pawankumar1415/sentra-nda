@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
@@ -54,13 +55,38 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Period extraction helpers
+# ─────────────────────────────────────────────────────────────────────────────
+_PERIOD_RE = re.compile(r"\b(P\d{2})\b", re.IGNORECASE)
+
+
+def _extract_period_from_filename(filename: str) -> str:
+    """Extract period like 'P07' from filename. Returns '' if not found."""
+    if not filename:
+        return ""
+    m = _PERIOD_RE.search(filename)
+    return m.group(1).upper() if m else ""
+
+
+def _extract_period_from_sheet(df: "pd.DataFrame") -> str:
+    """Scan the first few rows of the sheet for a P## period reference."""
+    for i in range(min(6, len(df))):
+        for j in range(min(10, len(df.columns))):
+            cell = _safe(df.iloc[i, j])
+            m = _PERIOD_RE.search(cell)
+            if m:
+                return m.group(1).upper()
+    return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Excel parser — NDA MPPR multi-row format
 # ─────────────────────────────────────────────────────────────────────────────
 # DCA RAG letters that identify a project data row
 _RAG_VALUES = {"r", "a", "g", "-", "n/a", "tbd"}
 
 
-def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
+def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]:
     """
     Parse the '5a)NDA MPPR' sheet from an NDA Executive Project Summary Excel.
 
@@ -68,6 +94,10 @@ def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
       Row N:   col0=empty, col1=project name, col3=DCA (R/A/G), col7+=numeric data
       Row N+1: col0=project name, col1=narrative text
       Row N+2: blank separator
+
+    Args:
+        file_bytes: Raw Excel file bytes.
+        filename:   Original filename (used to extract period, e.g. 'P07 Exec...').
 
     Returns:
         (period_name, list_of_project_dicts)
@@ -86,8 +116,14 @@ def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
     df = pd.read_excel(xl, sheet_name=sheet_name, header=None)
     logger.info("Raw sheet '%s': %d rows × %d cols", sheet_name, len(df), len(df.columns))
 
-    # Try to extract period from file metadata row (row 0 sometimes has it)
-    period = "UNKNOWN"
+    # Extract period: filename first, then sheet content, then fallback
+    period = _extract_period_from_filename(filename)
+    if not period:
+        period = _extract_period_from_sheet(df)
+    if not period:
+        period = "UNKNOWN"
+        logger.warning("Could not determine period from filename or sheet content")
+    logger.info("Detected period: %s", period)
 
     projects: List[Dict] = []
 
@@ -172,18 +208,22 @@ def parse_excel(file_bytes: bytes) -> Tuple[str, List[Dict]]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Ingest pipeline
 # ─────────────────────────────────────────────────────────────────────────────
-def run_ingest(file_bytes: bytes) -> Dict:
+def run_ingest(file_bytes: bytes, filename: str = "") -> Dict:
     """
     Full ingest pipeline:
       1. Parse Excel → project rows
       2. Batch-embed raw_content strings
       3. Upsert all rows into nda_projects
 
+    Args:
+        file_bytes: Raw Excel file bytes.
+        filename:   Original filename for period extraction.
+
     Returns a summary dict suitable for the HTTP response.
     """
-    logger.info("Starting ingest pipeline")
+    logger.info("Starting ingest pipeline (filename=%s)", filename or "<none>")
 
-    period, projects = parse_excel(file_bytes)
+    period, projects = parse_excel(file_bytes, filename=filename)
     if not projects:
         return {"status": "warning", "message": "No project rows found", "indexed": 0}
 

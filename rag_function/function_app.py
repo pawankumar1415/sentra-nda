@@ -51,12 +51,17 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
     try:
         # Accept multipart upload OR raw binary body
         file_bytes: bytes = b""
+        filename: str = ""
 
         files = req.files
         if files and "file" in files:
-            file_bytes = files["file"].read()
+            uploaded = files["file"]
+            file_bytes = uploaded.read()
+            filename = getattr(uploaded, "filename", "") or ""
         else:
             file_bytes = req.get_body()
+            # Allow filename via query param for raw body uploads
+            filename = req.params.get("filename", "")
 
         if not file_bytes:
             return func.HttpResponse(
@@ -66,7 +71,7 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
             )
 
-        result = run_ingest(file_bytes)
+        result = run_ingest(file_bytes, filename=filename)
 
         return func.HttpResponse(
             json.dumps(result),
