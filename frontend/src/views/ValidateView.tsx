@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X } from 'lucide-react';
 import { validateNarrative } from '../services/api';
 
 const ValidateView = () => {
@@ -59,11 +59,25 @@ const ValidateView = () => {
                 <p className="page-subtitle">Verify project narratives against core guidelines and EAC variance data.</p>
             </div>
 
+            {/* Error Popup Modal */}
             {error && (
-                <div className="card animate-fade-in" style={{ borderColor: 'var(--status-fail)', borderLeftWidth: '4px' }}>
-                    <div style={{ color: 'var(--status-fail)', display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <AlertTriangle size={20} />
-                        <strong>Error:</strong> {error}
+                <div className="modal-overlay" onClick={() => setError('')}>
+                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <div style={{ color: 'var(--status-fail)', display: 'flex', gap: '8px', alignItems: 'center', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                                <AlertTriangle size={24} />
+                                Validation Error
+                            </div>
+                            <button onClick={() => setError('')} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <p style={{ color: 'var(--text-primary)', lineHeight: '1.5' }}>{error}</p>
+                        <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setError('')} className="btn btn-primary">
+                                Dismiss
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
