@@ -72,7 +72,7 @@ const ValidateView = () => {
             <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: '500px 1fr', gap: '32px', height: 'calc(100vh - 200px)', minHeight: '600px' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <div className="input-section" style={{ height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto', paddingRight: '8px' }}>
                     <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
