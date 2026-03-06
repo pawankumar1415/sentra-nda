@@ -81,7 +81,7 @@ const IngestView = () => {
 
                 {/* MPPR Upload Card */}
                 <div className="card">
-                    <h2 className="card-title">Upload MPPR Reference Data</h2>
+                    <h2 className="card-title">Upload NDA MPPR Reference Data</h2>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '24px' }}>
                         Upload standard monthly period reports. The period name (e.g., P08) will be extracted automatically.
                     </p>

@@ -8,7 +8,7 @@ const Sidebar = () => {
                 <div className="logo-icon">
                     <Activity size={20} />
                 </div>
-                <div className="sidebar-title">Sentra RAG</div>
+                <div className="sidebar-title">NDA Narrative</div>
             </div>
 
             <nav className="nav-links">
@@ -17,7 +17,7 @@ const Sidebar = () => {
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 >
                     <MessageSquare size={18} />
-                    <span>New Chat</span>
+                    <span>QA Chat</span>
                 </NavLink>
 
                 <NavLink
@@ -33,7 +33,7 @@ const Sidebar = () => {
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 >
                     <Settings size={18} />
-                    <span>Data Settings</span>
+                    <span>Data Upload</span>
                 </NavLink>
             </nav>
 
