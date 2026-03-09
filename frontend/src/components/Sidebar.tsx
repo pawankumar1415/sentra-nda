@@ -4,7 +4,7 @@ import { MessageSquare, FileText, Settings, ListChecks } from 'lucide-react';
 const Sidebar = () => {
     return (
         <aside className="sidebar">
-            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
+            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px', padding: '16px', background: 'var(--sellafield-dark-teal)', borderRadius: '8px' }}>
                 <img src="https://sellafield-sentra.netlify.app/assets/sellafield-logo.png" alt="Sellafield Logo" style={{ width: '160px', objectFit: 'contain' }} />
             </div>
 
