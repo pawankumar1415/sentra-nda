@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, Key } from 'lucide-react';
+import { Send, User, Bot, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { sendChatMessage } from '../services/api';
@@ -29,14 +29,8 @@ const ChatView = () => {
         scrollToBottom();
     }, [messages, isLoading]);
 
-    const [apiKey, setApiKey] = useState('');
-
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
-        if (!apiKey) {
-            alert("Please enter your Azure Function API Key at the top first.");
-            return;
-        }
 
         const userMsg: ChatMessage = {
             id: Date.now().toString(),
@@ -55,7 +49,7 @@ const ChatView = () => {
             // Let's send the previous history up to the user message
             const historyToSent = messages.map(m => ({ role: m.role, content: m.content }));
 
-            const response = await sendChatMessage(apiKey, userMsg.content, historyToSent);
+            const response = await sendChatMessage(userMsg.content, historyToSent);
 
             const assistantMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),
@@ -85,18 +79,6 @@ const ChatView = () => {
 
     return (
         <div className="chat-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-
-            {/* Top API Key Bar */}
-            <div style={{ background: 'var(--bg-primary)', padding: '12px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Key size={16} style={{ color: 'var(--text-secondary)' }} />
-                <input
-                    type="password"
-                    placeholder="Enter Global Azure Function Key..."
-                    style={{ background: 'transparent', border: 'none', outline: 'none', color: 'var(--text-primary)', width: '300px', fontSize: '0.9rem' }}
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                />
-            </div>
 
             {/* Messages Area */}
             <div className="messages-container" style={{ flex: 1, overflowY: 'auto', padding: '40px 20px' }}>

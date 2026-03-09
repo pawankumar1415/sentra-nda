@@ -3,7 +3,6 @@ import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileE
 import { validateNarrative, listProjects, type ProjectInfo } from '../services/api';
 
 const ValidateView = () => {
-    const [apiKey, setApiKey] = useState('');
     const [projectName, setProjectName] = useState('Sellafield');
     const [period, setPeriod] = useState('P08');
     const [narrative, setNarrative] = useState('');
@@ -22,16 +21,11 @@ const ValidateView = () => {
         const file = e.target.files[0];
         setUploadedFile(file);
 
-        if (!apiKey) {
-            setError('Please provide your Azure Function Key to read the Excel file.');
-            return;
-        }
-
         setUploadLoading(true);
         setError('');
 
         try {
-            const data = await listProjects(apiKey, file);
+            const data = await listProjects(file);
             setProjectsList(data.projects);
             setPeriod(data.period);
             if (data.projects && data.projects.length > 0) {
@@ -66,10 +60,6 @@ const ValidateView = () => {
 
     const handleValidate = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!apiKey) {
-            setError('Please provide your Azure Function Key.');
-            return;
-        }
         if (!narrative.trim()) {
             setError('Please provide a narrative to validate.');
             return;
@@ -79,7 +69,7 @@ const ValidateView = () => {
         setError('');
 
         try {
-            const response = await validateNarrative(apiKey, {
+            const response = await validateNarrative({
                 narrative,
                 project_name: projectName,
                 period
@@ -141,17 +131,6 @@ const ValidateView = () => {
                     <div className="card">
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
-                            <div className="form-group">
-                                <label className="form-label">Azure Function Key</label>
-                                <input
-                                    type="password"
-                                    className="form-control"
-                                    value={apiKey}
-                                    onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder="Paste your function key here..."
-                                />
-                            </div>
-
                             <div className="form-group">
                                 <label className="form-label">Source Data (Optional)</label>
                                 <div style={{

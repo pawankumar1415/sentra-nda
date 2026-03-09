@@ -1,7 +1,11 @@
-export const API_BASE_URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api";
+// @ts-ignore
+import localSettings from '../local.settings.json';
 
-export const getAuthParams = (key: string) => {
-    return key ? `?code=${encodeURIComponent(key)}` : '';
+export const API_BASE_URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api";
+export const AZURE_FUNCTION_KEY = localSettings.AZURE_FUNCTION_KEY || '';
+
+export const getAuthParams = () => {
+    return AZURE_FUNCTION_KEY ? `?code=${encodeURIComponent(AZURE_FUNCTION_KEY)}` : '';
 };
 
 export interface ValidateRequest {
@@ -10,8 +14,8 @@ export interface ValidateRequest {
     period: string;
 }
 
-export const validateNarrative = async (key: string, data: ValidateRequest) => {
-    const url = `${API_BASE_URL}/validate${getAuthParams(key)}`;
+export const validateNarrative = async (data: ValidateRequest) => {
+    const url = `${API_BASE_URL}/validate${getAuthParams()}`;
 
     const response = await fetch(url, {
         method: 'POST',
@@ -34,12 +38,12 @@ export const validateNarrative = async (key: string, data: ValidateRequest) => {
     return response.json();
 };
 
-export const ingestFile = async (key: string, file: File, type: 'mppr' | 'eac') => {
+export const ingestFile = async (file: File, type: 'mppr' | 'eac') => {
     const endpoint = type === 'mppr' ? 'ingest' : 'ingest-eac';
 
     // Create URLSearchParams to securely handle query parameters
     const params = new URLSearchParams();
-    if (key) params.append('code', key);
+    if (AZURE_FUNCTION_KEY) params.append('code', AZURE_FUNCTION_KEY);
     params.append('filename', file.name);
 
     const url = `${API_BASE_URL}/${endpoint}?${params.toString()}`;
@@ -65,8 +69,8 @@ export interface ChatMessage {
     content: string;
 }
 
-export const sendChatMessage = async (key: string, question: string, history: ChatMessage[]) => {
-    const url = `${API_BASE_URL}/chat${getAuthParams(key)}`;
+export const sendChatMessage = async (question: string, history: ChatMessage[]) => {
+    const url = `${API_BASE_URL}/chat${getAuthParams()}`;
 
     const response = await fetch(url, {
         method: 'POST',
@@ -97,9 +101,9 @@ export interface ListProjectsResponse {
     projects: ProjectInfo[];
 }
 
-export const listProjects = async (key: string, file: File): Promise<ListProjectsResponse> => {
+export const listProjects = async (file: File): Promise<ListProjectsResponse> => {
     const params = new URLSearchParams();
-    if (key) params.append('code', key);
+    if (AZURE_FUNCTION_KEY) params.append('code', AZURE_FUNCTION_KEY);
     params.append('filename', file.name);
 
     const url = `${API_BASE_URL}/list-projects?${params.toString()}`;
@@ -120,9 +124,9 @@ export const listProjects = async (key: string, file: File): Promise<ListProject
     return response.json();
 };
 
-export const batchValidate = async (key: string, file: File) => {
+export const batchValidate = async (file: File) => {
     const params = new URLSearchParams();
-    if (key) params.append('code', key);
+    if (AZURE_FUNCTION_KEY) params.append('code', AZURE_FUNCTION_KEY);
     params.append('filename', file.name);
 
     const url = `${API_BASE_URL}/batch-validate?${params.toString()}`;

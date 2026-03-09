@@ -3,7 +3,6 @@ import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud
 import { batchValidate } from '../services/api';
 
 const BatchValidateView = () => {
-    const [apiKey, setApiKey] = useState('');
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [results, setResults] = useState<any[]>([]);
@@ -18,10 +17,6 @@ const BatchValidateView = () => {
     };
 
     const handleBatchValidate = async () => {
-        if (!apiKey) {
-            setError('Please provide your Azure Function Key.');
-            return;
-        }
         if (!uploadedFile) {
             setError('Please upload an MPPR Excel file.');
             return;
@@ -33,7 +28,7 @@ const BatchValidateView = () => {
         setExpandedRow(null);
 
         try {
-            const data = await batchValidate(apiKey, uploadedFile);
+            const data = await batchValidate(uploadedFile);
             setResults(data.results || []);
             setTotal(data.total || 0);
             setPeriod(data.period || '');
@@ -112,17 +107,6 @@ const BatchValidateView = () => {
                 <div className="input-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
                     <div className="card">
                         <h2 className="card-title">Run Batch Validation</h2>
-
-                        <div className="form-group">
-                            <label className="form-label">Azure Function Key</label>
-                            <input
-                                type="password"
-                                className="form-control"
-                                value={apiKey}
-                                onChange={(e) => setApiKey(e.target.value)}
-                                placeholder="Paste your function key here..."
-                            />
-                        </div>
 
                         <div className="form-group">
                             <label className="form-label">MPPR Data Source (Excel)</label>

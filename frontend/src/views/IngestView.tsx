@@ -1,9 +1,8 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { ingestFile } from '../services/api';
 
 const IngestView = () => {
-    const [apiKey, setApiKey] = useState('');
     const [mpprFile, setMpprFile] = useState<File | null>(null);
     const [eacFile, setEacFile] = useState<File | null>(null);
 
@@ -19,7 +18,6 @@ const IngestView = () => {
     const eacInputRef = useRef<HTMLInputElement>(null);
 
     const handleMpprUpload = async () => {
-        if (!apiKey) return setMpprError('API Key is required.');
         if (!mpprFile) return setMpprError('Please select a file.');
 
         setMpprLoading(true);
@@ -27,7 +25,7 @@ const IngestView = () => {
         setMpprResult(null);
 
         try {
-            const res = await ingestFile(apiKey, mpprFile, 'mppr');
+            const res = await ingestFile(mpprFile, 'mppr');
             setMpprResult(res);
             setMpprFile(null);
         } catch (err: any) {
@@ -38,7 +36,6 @@ const IngestView = () => {
     };
 
     const handleEacUpload = async () => {
-        if (!apiKey) return setEacError('API Key is required.');
         if (!eacFile) return setEacError('Please select a file.');
 
         setEacLoading(true);
@@ -46,7 +43,7 @@ const IngestView = () => {
         setEacResult(null);
 
         try {
-            const res = await ingestFile(apiKey, eacFile, 'eac');
+            const res = await ingestFile(eacFile, 'eac');
             setEacResult(res);
             setEacFile(null);
         } catch (err: any) {
@@ -61,20 +58,6 @@ const IngestView = () => {
             <div className="page-header">
                 <h1 className="page-title">Data Ingestion</h1>
                 <p className="page-subtitle">Upload NDA MPPR and EAC variance spreadsheets into the knowledge base.</p>
-            </div>
-
-            <div className="card" style={{ marginBottom: '32px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">Global Azure Function Key</label>
-                    <input
-                        type="password"
-                        className="form-control"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="Paste your function key here to enable uploads..."
-                        style={{ maxWidth: '500px' }}
-                    />
-                </div>
             </div>
 
             <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
