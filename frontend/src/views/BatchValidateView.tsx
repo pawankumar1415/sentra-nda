@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X } from 'lucide-react';
-import { batchValidate } from '../services/api';
+import { listProjects, validateNarrative } from '../services/api';
 
 const BatchValidateView = () => {
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -10,6 +10,7 @@ const BatchValidateView = () => {
     const [period, setPeriod] = useState('');
     const [error, setError] = useState('');
     const [expandedRow, setExpandedRow] = useState<string | null>(null);
+    const [progress, setProgress] = useState({ current: 0, total: 0, statusText: '' });
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
@@ -26,12 +27,57 @@ const BatchValidateView = () => {
         setError('');
         setResults([]);
         setExpandedRow(null);
+        setProgress({ current: 0, total: 0, statusText: 'Extracting projects from Excel...' });
 
         try {
-            const data = await batchValidate(uploadedFile);
-            setResults(data.results || []);
-            setTotal(data.total || 0);
-            setPeriod(data.period || '');
+            // Step 1: Extract projects from the Excel file
+            const listData = await listProjects(uploadedFile);
+            const projects = listData.projects || [];
+
+            if (projects.length === 0) {
+                throw new Error("No projects found in the uploaded file.");
+            }
+
+            setTotal(projects.length);
+            setPeriod(listData.period || '');
+
+            const currentResults: any[] = [];
+
+            // Step 2: Validate each project individually to show dynamic progress
+            for (let i = 0; i < projects.length; i++) {
+                const proj = projects[i];
+                setProgress({
+                    current: i,
+                    total: projects.length,
+                    statusText: `Validating ${proj.project_name}...`
+                });
+
+                try {
+                    const validationResult = await validateNarrative({
+                        narrative: proj.narrative_text,
+                        project_name: proj.project_name,
+                        period: listData.period || ''
+                    });
+
+                    const resultWithMeta = {
+                        ...validationResult,
+                        project_name: proj.project_name
+                    };
+                    currentResults.push(resultWithMeta);
+                } catch (err: any) {
+                    currentResults.push({
+                        project_name: proj.project_name,
+                        overall_verdict: 'ERROR',
+                        message: err.message || 'Validation failed'
+                    });
+                }
+
+                // Update results dynamically
+                setResults([...currentResults]);
+            }
+
+            setProgress({ current: projects.length, total: projects.length, statusText: 'Validation Complete!' });
+
         } catch (err: any) {
             setError(err.message || 'An error occurred during batch validation');
         } finally {
@@ -170,22 +216,22 @@ const BatchValidateView = () => {
                         </div>
                     )}
 
-                    {loading && (
+                    {loading && progress.total === 0 && (
                         <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', padding: '60px 20px' }}>
                             <Loader2 size={48} className="spin" style={{ marginBottom: '16px', color: 'var(--accent-blue)' }} />
-                            <h3 style={{ marginBottom: '8px' }}>Processing Batch Validation...</h3>
-                            <p style={{ color: 'var(--text-secondary)' }}>This validates every narrative in the uploaded file.</p>
+                            <h3 style={{ marginBottom: '8px' }}>{progress.statusText || 'Processing...'}</h3>
+                            <p style={{ color: 'var(--text-secondary)' }}>Reading the Excel file format...</p>
                         </div>
                     )}
 
-                    {results.length > 0 && !loading && (
+                    {(results.length > 0 || (loading && progress.total > 0)) && (
                         <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
                                 <div>
                                     <h2 style={{ fontSize: '1.2rem', marginBottom: '4px' }}>Batch Results</h2>
                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                        Period: <strong>{period}</strong> | Total Processed: <strong>{total}</strong>
+                                        Period: <strong>{period}</strong> | Processed: <strong>{progress.current} / {progress.total || total}</strong>
                                     </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -201,130 +247,150 @@ const BatchValidateView = () => {
                                 </div>
                             </div>
 
-                            <div className="table-responsive">
-                                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
-                                    <thead>
-                                        <tr style={{ background: 'var(--bg-secondary)', textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
-                                            <th style={{ padding: '12px', width: '40px' }}></th>
-                                            <th style={{ padding: '12px' }}>Project Name</th>
-                                            <th style={{ padding: '12px', width: '120px' }}>Verdict</th>
-                                            <th style={{ padding: '12px', width: '100px', textAlign: 'center' }}>Score</th>
-                                            <th style={{ padding: '12px', width: '100px', textAlign: 'center' }}>Issues</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {results.map((res: any, idx: number) => {
-                                            const vColor = getVerdictColor(res.overall_verdict);
-                                            const isExpanded = expandedRow === res.project_name;
-                                            const totalIssues = (res.layer1?.issues?.length || 0) + (res.layer2?.issues?.length || 0);
+                            {/* Dynamic Progress Bar */}
+                            {(loading && progress.total > 0) && (
+                                <div style={{ background: 'var(--bg-secondary)', borderRadius: '8px', padding: '16px', border: '1px solid var(--border-color)' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.9rem' }}>
+                                        <span style={{ fontWeight: '500' }}>{progress.statusText}</span>
+                                        <span style={{ color: 'var(--text-secondary)' }}>{Math.round((progress.current / progress.total) * 100)}%</span>
+                                    </div>
+                                    <div style={{ height: '8px', background: 'var(--border-color)', borderRadius: '4px', overflow: 'hidden' }}>
+                                        <div style={{
+                                            height: '100%',
+                                            background: 'var(--accent-blue)',
+                                            width: `${(progress.current / progress.total) * 100}%`,
+                                            transition: 'width 0.3s ease'
+                                        }}></div>
+                                    </div>
+                                </div>
+                            )}
 
-                                            return (
-                                                <React.Fragment key={idx}>
-                                                    <tr
-                                                        onClick={() => toggleRow(res.project_name)}
-                                                        style={{
-                                                            borderBottom: '1px solid var(--border-color)',
-                                                            cursor: 'pointer',
-                                                            background: isExpanded ? 'var(--bg-secondary)' : 'var(--bg-primary)'
-                                                        }}
-                                                        className="hover-row"
-                                                    >
-                                                        <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
-                                                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                                                        </td>
-                                                        <td style={{ padding: '12px', fontWeight: '500' }}>
-                                                            {res.project_name}
-                                                        </td>
-                                                        <td style={{ padding: '12px' }}>
-                                                            <div style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '6px',
-                                                                padding: '4px 8px',
-                                                                borderRadius: '4px',
-                                                                background: getVerdictBg(res.overall_verdict),
-                                                                color: vColor,
-                                                                fontWeight: 'bold',
-                                                                fontSize: '0.85rem'
-                                                            }}>
-                                                                {getVerdictIcon(res.overall_verdict)}
-                                                                {res.overall_verdict}
-                                                            </div>
-                                                        </td>
-                                                        <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
-                                                            {res.layer1?.compliance_score || '-'}
-                                                        </td>
-                                                        <td style={{ padding: '12px', textAlign: 'center', color: totalIssues > 0 ? 'var(--status-fail)' : 'var(--text-secondary)' }}>
-                                                            {totalIssues > 0 ? totalIssues : '-'}
-                                                        </td>
-                                                    </tr>
+                            {results.length > 0 && (
+                                <div className="table-responsive">
+                                    <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
+                                        <thead>
+                                            <tr style={{ background: 'var(--bg-secondary)', textAlign: 'left', borderBottom: '2px solid var(--border-color)' }}>
+                                                <th style={{ padding: '12px', width: '40px' }}></th>
+                                                <th style={{ padding: '12px' }}>Project Name</th>
+                                                <th style={{ padding: '12px', width: '120px' }}>Verdict</th>
+                                                <th style={{ padding: '12px', width: '100px', textAlign: 'center' }}>Score</th>
+                                                <th style={{ padding: '12px', width: '100px', textAlign: 'center' }}>Issues</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {results.map((res: any, idx: number) => {
+                                                const vColor = getVerdictColor(res.overall_verdict);
+                                                const isExpanded = expandedRow === res.project_name;
+                                                const totalIssues = (res.layer1?.issues?.length || 0) + (res.layer2?.issues?.length || 0);
 
-                                                    {/* Expanded Row Detail */}
-                                                    {isExpanded && (
-                                                        <tr style={{ background: 'var(--bg-primary)' }}>
-                                                            <td colSpan={5} style={{ padding: '24px', borderBottom: '2px solid var(--border-color)' }}>
-                                                                {res.overall_verdict === 'ERROR' || res.overall_verdict === 'SKIPPED' ? (
-                                                                    <div style={{ color: vColor }}>{res.message}</div>
-                                                                ) : (
-                                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-                                                                        {/* Layer 1 */}
-                                                                        {res.layer1?.issues?.length > 0 && (
-                                                                            <div style={{ padding: '16px', borderLeft: '3px solid var(--status-fail)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
-                                                                                <h4 style={{ color: 'var(--status-fail)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <AlertTriangle size={16} /> Format & Compliance Issues
-                                                                                </h4>
-                                                                                <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-secondary)' }}>
-                                                                                    {res.layer1.issues.map((issue: string, i: number) => (
-                                                                                        <li key={i} style={{ marginBottom: '4px' }}>{issue}</li>
-                                                                                    ))}
-                                                                                </ul>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* Layer 2 */}
-                                                                        {res.layer2?.issues?.length > 0 && (
-                                                                            <div style={{ padding: '16px', borderLeft: '3px solid var(--status-warn)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
-                                                                                <h4 style={{ color: 'var(--status-warn)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    <Info size={16} /> Data Inconsistencies
-                                                                                </h4>
-                                                                                <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-secondary)' }}>
-                                                                                    {res.layer2.issues.map((issue: string, i: number) => (
-                                                                                        <li key={i} style={{ marginBottom: '4px' }}>{issue}</li>
-                                                                                    ))}
-                                                                                </ul>
-                                                                            </div>
-                                                                        )}
-
-                                                                        {(res.layer1?.issues?.length === 0 && res.layer2?.issues?.length === 0) && (
-                                                                            <div style={{ color: 'var(--status-pass)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                <CheckCircle2 size={16} /> No issues found for this narrative.
-                                                                            </div>
-                                                                        )}
-
-                                                                        {/* AI Rewrite Detail */}
-                                                                        {res.rewritten_narrative && (
-                                                                            <div style={{ padding: '16px', background: 'var(--accent-blue-glow)', border: '1px solid var(--accent-blue)', borderRadius: '8px' }}>
-                                                                                <h4 style={{ color: 'var(--accent-blue)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                                                                    ✨ AI Rewritten Narrative
-                                                                                </h4>
-                                                                                <div style={{ background: 'var(--bg-primary)', padding: '12px', borderRadius: '4px', fontSize: '0.9rem', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
-                                                                                    {res.rewritten_narrative}
-                                                                                </div>
-                                                                            </div>
-                                                                        )}
-
-                                                                    </div>
-                                                                )}
+                                                return (
+                                                    <React.Fragment key={idx}>
+                                                        <tr
+                                                            onClick={() => toggleRow(res.project_name)}
+                                                            style={{
+                                                                borderBottom: '1px solid var(--border-color)',
+                                                                cursor: 'pointer',
+                                                                background: isExpanded ? 'var(--bg-secondary)' : 'var(--bg-primary)'
+                                                            }}
+                                                            className="hover-row"
+                                                        >
+                                                            <td style={{ padding: '12px', color: 'var(--text-secondary)' }}>
+                                                                {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                                                            </td>
+                                                            <td style={{ padding: '12px', fontWeight: '500' }}>
+                                                                {res.project_name}
+                                                            </td>
+                                                            <td style={{ padding: '12px' }}>
+                                                                <div style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '6px',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '4px',
+                                                                    background: getVerdictBg(res.overall_verdict),
+                                                                    color: vColor,
+                                                                    fontWeight: 'bold',
+                                                                    fontSize: '0.85rem'
+                                                                }}>
+                                                                    {getVerdictIcon(res.overall_verdict)}
+                                                                    {res.overall_verdict}
+                                                                </div>
+                                                            </td>
+                                                            <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
+                                                                {res.layer1?.compliance_score || '-'}
+                                                            </td>
+                                                            <td style={{ padding: '12px', textAlign: 'center', color: totalIssues > 0 ? 'var(--status-fail)' : 'var(--text-secondary)' }}>
+                                                                {totalIssues > 0 ? totalIssues : '-'}
                                                             </td>
                                                         </tr>
-                                                    )}
-                                                </React.Fragment>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
+
+                                                        {/* Expanded Row Detail */}
+                                                        {isExpanded && (
+                                                            <tr style={{ background: 'var(--bg-primary)' }}>
+                                                                <td colSpan={5} style={{ padding: '24px', borderBottom: '2px solid var(--border-color)' }}>
+                                                                    {res.overall_verdict === 'ERROR' || res.overall_verdict === 'SKIPPED' ? (
+                                                                        <div style={{ color: vColor }}>{res.message}</div>
+                                                                    ) : (
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                                                                            {/* Layer 1 */}
+                                                                            {res.layer1?.issues?.length > 0 && (
+                                                                                <div style={{ padding: '16px', borderLeft: '3px solid var(--status-fail)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
+                                                                                    <h4 style={{ color: 'var(--status-fail)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                        <AlertTriangle size={16} /> Format & Compliance Issues
+                                                                                    </h4>
+                                                                                    <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+                                                                                        {res.layer1.issues.map((issue: string, i: number) => (
+                                                                                            <li key={i} style={{ marginBottom: '4px' }}>{issue}</li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Layer 2 */}
+                                                                            {res.layer2?.issues?.length > 0 && (
+                                                                                <div style={{ padding: '16px', borderLeft: '3px solid var(--status-warn)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
+                                                                                    <h4 style={{ color: 'var(--status-warn)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                        <Info size={16} /> Data Inconsistencies
+                                                                                    </h4>
+                                                                                    <ul style={{ margin: 0, paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+                                                                                        {res.layer2.issues.map((issue: string, i: number) => (
+                                                                                            <li key={i} style={{ marginBottom: '4px' }}>{issue}</li>
+                                                                                        ))}
+                                                                                    </ul>
+                                                                                </div>
+                                                                            )}
+
+                                                                            {(res.layer1?.issues?.length === 0 && res.layer2?.issues?.length === 0) && (
+                                                                                <div style={{ color: 'var(--status-pass)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                    <CheckCircle2 size={16} /> No issues found for this narrative.
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* AI Rewrite Detail */}
+                                                                            {res.rewritten_narrative && (
+                                                                                <div style={{ padding: '16px', background: 'var(--accent-blue-glow)', border: '1px solid var(--accent-blue)', borderRadius: '8px' }}>
+                                                                                    <h4 style={{ color: 'var(--accent-blue)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                                                        ✨ AI Rewritten Narrative
+                                                                                    </h4>
+                                                                                    <div style={{ background: 'var(--bg-primary)', padding: '12px', borderRadius: '4px', fontSize: '0.9rem', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                                                                                        {res.rewritten_narrative}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+
+                                                                        </div>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
 
                         </div>
                     )}
