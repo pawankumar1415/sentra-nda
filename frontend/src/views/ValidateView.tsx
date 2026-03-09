@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X } from 'lucide-react';
-import { validateNarrative } from '../services/api';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud } from 'lucide-react';
+import { validateNarrative, listProjects, type ProjectInfo } from '../services/api';
 
 const ValidateView = () => {
     const [apiKey, setApiKey] = useState('');
@@ -11,6 +11,58 @@ const ValidateView = () => {
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<any>(null);
     const [error, setError] = useState('');
+
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    const [projectsList, setProjectsList] = useState<ProjectInfo[]>([]);
+    const [isManualEntry, setIsManualEntry] = useState(true);
+    const [uploadLoading, setUploadLoading] = useState(false);
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const file = e.target.files[0];
+        setUploadedFile(file);
+
+        if (!apiKey) {
+            setError('Please provide your Azure Function Key to read the Excel file.');
+            return;
+        }
+
+        setUploadLoading(true);
+        setError('');
+
+        try {
+            const data = await listProjects(apiKey, file);
+            setProjectsList(data.projects);
+            setPeriod(data.period);
+            if (data.projects && data.projects.length > 0) {
+                setIsManualEntry(false);
+                setProjectName(data.projects[0].project_name);
+                setNarrative(data.projects[0].narrative_text || '');
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to list projects from file');
+            setUploadedFile(null);
+        } finally {
+            setUploadLoading(false);
+            e.target.value = ''; // Reset input
+        }
+    };
+
+    const handleProjectSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const val = e.target.value;
+        if (val === '__MANUAL__') {
+            setIsManualEntry(true);
+            setProjectName('');
+            setNarrative('');
+        } else {
+            setIsManualEntry(false);
+            setProjectName(val);
+            const proj = projectsList.find(p => p.project_name === val);
+            if (proj) {
+                setNarrative(proj.narrative_text || '');
+            }
+        }
+    };
 
     const handleValidate = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -100,15 +152,77 @@ const ValidateView = () => {
                                 />
                             </div>
 
+                            <div className="form-group">
+                                <label className="form-label">Source Data (Optional)</label>
+                                <div style={{
+                                    border: '2px dashed var(--border-color)',
+                                    borderRadius: '8px',
+                                    padding: '24px',
+                                    textAlign: 'center',
+                                    background: 'var(--bg-secondary)',
+                                    cursor: 'pointer',
+                                    position: 'relative'
+                                }}>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleFileUpload}
+                                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                        title="Upload Excel File"
+                                    />
+                                    {uploadLoading ? (
+                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                                            <Loader2 size={24} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Processing File...
+                                        </div>
+                                    ) : uploadedFile ? (
+                                        <div style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
+                                            <ShieldCheck size={24} /> {uploadedFile.name} ({projectsList.length} projects loaded)
+                                        </div>
+                                    ) : (
+                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                            <UploadCloud size={32} />
+                                            <span>Upload MPPR Excel to auto-fill narrative data</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
                                 <div style={{ flex: 1 }}>
                                     <label className="form-label">Project Name</label>
-                                    <input
-                                        type="text"
-                                        className="form-control"
-                                        value={projectName}
-                                        onChange={(e) => setProjectName(e.target.value)}
-                                    />
+                                    {projectsList.length > 0 && !isManualEntry ? (
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <select
+                                                className="form-control"
+                                                value={projectName}
+                                                onChange={handleProjectSelect}
+                                                style={{ flex: 1, backgroundColor: 'var(--bg-primary)' }}
+                                            >
+                                                {projectsList.map((p, idx) => (
+                                                    <option key={idx} value={p.project_name}>{p.project_name}</option>
+                                                ))}
+                                                <option value="__MANUAL__">Type manually...</option>
+                                            </select>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                            <input
+                                                type="text"
+                                                className="form-control"
+                                                value={projectName}
+                                                onChange={(e) => setProjectName(e.target.value)}
+                                            />
+                                            {projectsList.length > 0 && (
+                                                <button type="button" onClick={() => {
+                                                    setIsManualEntry(false);
+                                                    setProjectName(projectsList[0].project_name);
+                                                    setNarrative(projectsList[0].narrative_text || '');
+                                                }} className="btn btn-outline" style={{ padding: '0 12px', whiteSpace: 'nowrap' }}>
+                                                    Back to List
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                                 <div style={{ width: '120px' }}>
                                     <label className="form-label">Period</label>

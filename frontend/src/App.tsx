@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import Sidebar from './components/Sidebar';
 import ChatView from './views/ChatView';
 import ValidateView from './views/ValidateView';
+import BatchValidateView from './views/BatchValidateView';
 import IngestView from './views/IngestView';
 import './App.css';
 
@@ -15,6 +16,7 @@ function App() {
             <Route path="/" element={<Navigate to="/chat" replace />} />
             <Route path="/chat" element={<ChatView />} />
             <Route path="/validate" element={<ValidateView />} />
+            <Route path="/batch-validate" element={<BatchValidateView />} />
             <Route path="/ingest" element={<IngestView />} />
           </Routes>
         </main>

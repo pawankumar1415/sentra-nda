@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { MessageSquare, FileText, Settings, Activity } from 'lucide-react';
+import { MessageSquare, FileText, Settings, Activity, ListChecks } from 'lucide-react';
 
 const Sidebar = () => {
     return (
@@ -26,6 +26,14 @@ const Sidebar = () => {
                 >
                     <FileText size={18} />
                     <span>Validate Narrative</span>
+                </NavLink>
+
+                <NavLink
+                    to="/batch-validate"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                >
+                    <ListChecks size={18} />
+                    <span>Batch Validate</span>
                 </NavLink>
 
                 <NavLink
