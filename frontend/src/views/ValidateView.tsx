@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud } from 'lucide-react';
 import { validateNarrative, listProjects, type ProjectInfo } from '../services/api';
 
@@ -15,6 +15,8 @@ const ValidateView = () => {
     const [projectsList, setProjectsList] = useState<ProjectInfo[]>([]);
     const [isManualEntry, setIsManualEntry] = useState(true);
     const [uploadLoading, setUploadLoading] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
@@ -223,6 +225,7 @@ const ValidateView = () => {
                             <div className="form-group">
                                 <label className="form-label">Draft Narrative</label>
                                 <textarea
+                                    ref={textareaRef}
                                     className="form-control"
                                     rows={8}
                                     value={narrative}
@@ -334,7 +337,13 @@ const ValidateView = () => {
                                             {result.rewritten_narrative}
                                         </div>
                                         <button
-                                            onClick={() => setNarrative(result.rewritten_narrative)}
+                                            type="button"
+                                            onClick={() => {
+                                                setNarrative(result.rewritten_narrative);
+                                                setToastMessage('Narrative updated! Ready for re-validation.');
+                                                setTimeout(() => setToastMessage(''), 3000);
+                                                textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                            }}
                                             className="btn btn-primary"
                                             style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.9rem' }}
                                         >
@@ -353,6 +362,29 @@ const ValidateView = () => {
                     )}
                 </div>
             </div>
+
+            {/* Toast Notification */}
+            {toastMessage && (
+                <div style={{
+                    position: 'fixed',
+                    bottom: '32px',
+                    right: '32px',
+                    background: 'var(--status-pass-bg)',
+                    color: 'var(--status-pass)',
+                    padding: '16px 24px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--status-pass)',
+                    boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    zIndex: 1000,
+                    animation: 'fadeIn 0.3s ease-out'
+                }}>
+                    <CheckCircle2 size={24} />
+                    <span style={{ fontWeight: '600' }}>{toastMessage}</span>
+                </div>
+            )}
         </div>
     );
 };
