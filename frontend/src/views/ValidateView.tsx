@@ -95,9 +95,9 @@ const ValidateView = () => {
     };
 
     return (
-        <div className="validate-view">
+        <div className="validate-view page-container">
             <div className="page-header">
-                <h1 className="page-title">Narrative Validation</h1>
+                <h1 className="page-title">Individual Narrative Validation</h1>
                 <p className="page-subtitle">Verify project narratives against core guidelines and EAC variance data.</p>
             </div>
 
@@ -127,7 +127,7 @@ const ValidateView = () => {
             <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section" style={{ paddingRight: '8px' }}>
+                <div className="input-section">
                     <div className="card">
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
@@ -254,7 +254,7 @@ const ValidateView = () => {
                 </div>
 
                 {/* Right Column: Results */}
-                <div className="results-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                <div className="results-section">
                     {!result && !loading && (
                         <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', opacity: 0.5, padding: '60px 20px' }}>
                             <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
