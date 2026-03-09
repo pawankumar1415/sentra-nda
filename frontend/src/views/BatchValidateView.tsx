@@ -205,7 +205,7 @@ const BatchValidateView = () => {
                             ) : (
                                 <>
                                     <ShieldCheck size={18} />
-                                    Run Batch Validation
+                                    Run AI Checks (Guidelines & Data Movement)
                                 </>
                             )}
                         </button>

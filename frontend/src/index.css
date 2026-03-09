@@ -12,10 +12,18 @@
   --border-color: #e5e7eb;
   --border-highlight: #d1d5db;
 
+  /* Sellafield Branding */
+  --sellafield-teal: #003946;
+  --sellafield-dark-teal: #002830;
+  --sellafield-light-teal: #004d5e;
+  --sellafield-lime: #E7FF01;
+  --sellafield-dark-lime: #c4d900;
+  --sellafield-bg-dark: #001820;
+
   /* Accents - Sentra / Professional */
-  --accent-blue: #2563eb;
-  --accent-blue-hover: #1d4ed8;
-  --accent-blue-glow: rgba(37, 99, 235, 0.1);
+  --accent-blue: var(--sellafield-teal);
+  --accent-blue-hover: var(--sellafield-light-teal);
+  --accent-blue-glow: rgba(0, 57, 70, 0.1);
   --accent-purple: #7c3aed;
   --accent-indigo: #4f46e5;
 

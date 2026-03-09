@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud } from 'lucide-react';
 import { validateNarrative, listProjects, type ProjectInfo } from '../services/api';
+import { diffWords } from 'diff';
 
 const ValidateView = () => {
     const [projectName, setProjectName] = useState('Sellafield');
@@ -94,6 +95,21 @@ const ValidateView = () => {
         if (verdict === 'PASS') return 'var(--status-pass-bg)';
         if (verdict === 'FAIL') return 'var(--status-fail-bg)';
         return 'var(--status-warn-bg)';
+    };
+
+    const renderDiff = (oldText: string, newText: string) => {
+        const diff = diffWords(oldText, newText);
+        return diff.map((part, index) => {
+            const color = part.added ? 'var(--status-pass)' : part.removed ? 'var(--status-fail)' : 'inherit';
+            const textDecoration = part.removed ? 'line-through' : 'none';
+            const backgroundColor = part.added ? 'var(--status-pass-bg)' : part.removed ? 'rgba(220, 38, 38, 0.1)' : 'transparent';
+
+            return (
+                <span key={index} style={{ color, textDecoration, backgroundColor, padding: part.added || part.removed ? '0 2px' : 0, borderRadius: '2px' }}>
+                    {part.value}
+                </span>
+            );
+        });
     };
 
     return (
@@ -248,7 +264,7 @@ const ValidateView = () => {
                                 ) : (
                                     <>
                                         <ShieldCheck size={18} />
-                                        Validate & Verify
+                                        Run AI Checks (Guidelines & Data Movement)
                                     </>
                                 )}
                             </button>
@@ -334,22 +350,28 @@ const ValidateView = () => {
                                     </h2>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                         <div style={{ background: 'var(--bg-primary)', padding: '16px', borderRadius: '8px', lineHeight: '1.6', color: 'var(--text-primary)', borderLeft: '3px solid var(--accent-blue)', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', fontSize: '0.95rem' }}>
-                                            {result.rewritten_narrative}
+                                            {renderDiff(narrative, result.rewritten_narrative)}
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setNarrative(result.rewritten_narrative);
-                                                setToastMessage('Narrative updated! Ready for re-validation.');
-                                                setTimeout(() => setToastMessage(''), 3000);
-                                                textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                            }}
-                                            className="btn btn-primary"
-                                            style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.9rem' }}
-                                        >
-                                            <FileEdit size={16} />
-                                            Use This Rewrite
-                                        </button>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setNarrative(result.rewritten_narrative);
+                                                    setToastMessage('Narrative updated! Please apply a final human review before proceeding.');
+                                                    setTimeout(() => setToastMessage(''), 4500);
+                                                    textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                }}
+                                                className="btn btn-primary"
+                                                style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.9rem' }}
+                                            >
+                                                <FileEdit size={16} />
+                                                Use This Rewrite
+                                            </button>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <AlertTriangle size={14} style={{ color: 'var(--status-warn)' }} />
+                                                Disclaimer: AI-generated rewritten narratives should be reviewed by a human before being used in real-world applications.
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             )}

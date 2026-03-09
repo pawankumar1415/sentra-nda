@@ -1,14 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { MessageSquare, FileText, Settings, Activity, ListChecks } from 'lucide-react';
+import { MessageSquare, FileText, Settings, ListChecks } from 'lucide-react';
 
 const Sidebar = () => {
     return (
         <aside className="sidebar">
-            <div className="sidebar-header">
-                <div className="logo-icon">
-                    <Activity size={20} />
-                </div>
-                <div className="sidebar-title">NDA Narrative</div>
+            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
+                <img src="https://sellafield-sentra.netlify.app/assets/sellafield-logo.png" alt="Sellafield Logo" style={{ width: '160px', objectFit: 'contain' }} />
             </div>
 
             <nav className="nav-links">
