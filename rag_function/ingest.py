@@ -205,6 +205,29 @@ def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]
     return period, projects
 
 
+def list_projects_from_bytes(file_bytes: bytes, filename: str = "") -> Dict:
+    """
+    Parses an uploaded Excel file and extracts the project list and period without side-effects.
+    Used by the frontend to populate dropdowns or by batch-validate to discover projects.
+    
+    Returns:
+        { "period": "P07", "projects": [{ "project_name": "...", "narrative_text": "..." }, ...] }
+    """
+    try:
+        period, projects = parse_excel(file_bytes, filename=filename)
+        # We only need the project mapping for dropdowns / batch runner context
+        lightweight_projects = [
+            {
+                "project_name": p["project_name"],
+                "narrative_text": p["narrative_text"]
+            }
+            for p in projects
+        ]
+        return {"period": period, "projects": lightweight_projects}
+    except Exception as e:
+        logger.exception("Failed to list projects from bytes: %s", e)
+        raise
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Ingest pipeline
 # ─────────────────────────────────────────────────────────────────────────────

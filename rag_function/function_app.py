@@ -16,9 +16,10 @@ import logging
 import azure.functions as func
 
 from db import ensure_schema
-from ingest import run_ingest
+from ingest import run_ingest, list_projects_from_bytes
 from ingest_eac import run_ingest_eac
 from validate import run_validate
+from batch_validate import run_batch_validate
 from chat import run_chat
 
 logger = logging.getLogger(__name__)
@@ -254,6 +255,102 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
 
     except Exception as exc:
         logger.exception("Chat pipeline failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+# ── Route 5: List Projects ────────────────────────────────────────────────────
+@app.route(route="list-projects", methods=["POST"])
+def list_projects(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/list-projects
+
+    Accepts an Excel file. Returns lightweight period and project metadata.
+    """
+    logger.info("POST /api/list-projects — request received")
+
+    try:
+        file_bytes: bytes = b""
+        filename: str = ""
+
+        files = req.files
+        if files and "file" in files:
+            uploaded = files["file"]
+            file_bytes = uploaded.read()
+            filename = getattr(uploaded, "filename", "") or ""
+        else:
+            file_bytes = req.get_body()
+            filename = req.params.get("filename", "")
+
+        if not file_bytes:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided. Send Excel as multipart field 'file' or raw body."}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        result = list_projects_from_bytes(file_bytes, filename=filename)
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception as exc:
+        logger.exception("List projects pipeline failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+# ── Route 6: Batch Validate ───────────────────────────────────────────────────
+@app.route(route="batch-validate", methods=["POST"])
+def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/batch-validate
+
+    Accepts an Excel file. Runs validation on every narrative found.
+    """
+    logger.info("POST /api/batch-validate — request received")
+
+    try:
+        file_bytes: bytes = b""
+        filename: str = ""
+
+        files = req.files
+        if files and "file" in files:
+            uploaded = files["file"]
+            file_bytes = uploaded.read()
+            filename = getattr(uploaded, "filename", "") or ""
+        else:
+            file_bytes = req.get_body()
+            filename = req.params.get("filename", "")
+
+        if not file_bytes:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided. Send Excel as multipart field 'file' or raw body."}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        # Allow passing top_k via query param, defaulting to 5
+        top_k = int(req.params.get("top_k", 5))
+
+        result = run_batch_validate(file_bytes, filename=filename, top_k=top_k)
+
+        return func.HttpResponse(
+            json.dumps(result),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    except Exception as exc:
+        logger.exception("Batch validate pipeline failed: %s", exc)
         return func.HttpResponse(
             json.dumps({"error": "Internal error", "detail": str(exc)}),
             status_code=500,
