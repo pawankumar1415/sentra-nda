@@ -124,10 +124,10 @@ const ValidateView = () => {
                 </div>
             )}
 
-            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px', height: 'calc(100vh - 180px)' }}>
+            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(400px, 1fr) 1.5fr', gap: '32px' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                <div className="input-section" style={{ paddingRight: '8px' }}>
                     <div className="card">
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
@@ -136,7 +136,7 @@ const ValidateView = () => {
                                 <div style={{
                                     border: '2px dashed var(--border-color)',
                                     borderRadius: '8px',
-                                    padding: '24px',
+                                    padding: '16px',
                                     textAlign: 'center',
                                     background: 'var(--bg-secondary)',
                                     cursor: 'pointer',
@@ -151,16 +151,16 @@ const ValidateView = () => {
                                     />
                                     {uploadLoading ? (
                                         <div style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                            <Loader2 size={24} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Processing File...
+                                            <Loader2 size={20} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Processing File...
                                         </div>
                                     ) : uploadedFile ? (
-                                        <div style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold' }}>
-                                            <ShieldCheck size={24} /> {uploadedFile.name} ({projectsList.length} projects loaded)
+                                        <div style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                                            <ShieldCheck size={20} /> {uploadedFile.name} ({projectsList.length} loaded)
                                         </div>
                                     ) : (
-                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                            <UploadCloud size={32} />
-                                            <span>Upload MPPR Excel to auto-fill narrative data</span>
+                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                            <UploadCloud size={24} />
+                                            <span style={{ fontSize: '0.9rem' }}>Upload MPPR Excel to auto-fill narrative data</span>
                                         </div>
                                     )}
                                 </div>
