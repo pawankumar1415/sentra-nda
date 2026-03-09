@@ -134,12 +134,13 @@ const ValidateView = () => {
                             <div className="form-group">
                                 <label className="form-label">Source Data (Optional)</label>
                                 <div style={{
-                                    border: '2px dashed var(--border-color)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '12px',
+                                    border: '1px solid var(--border-color)',
                                     borderRadius: '8px',
-                                    padding: '16px',
-                                    textAlign: 'center',
+                                    padding: '8px 12px',
                                     background: 'var(--bg-secondary)',
-                                    cursor: 'pointer',
                                     position: 'relative'
                                 }}>
                                     <input
@@ -149,19 +150,24 @@ const ValidateView = () => {
                                         style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                         title="Upload Excel File"
                                     />
-                                    {uploadLoading ? (
-                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                                            <Loader2 size={20} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Processing File...
-                                        </div>
-                                    ) : uploadedFile ? (
-                                        <div style={{ color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontWeight: 'bold', fontSize: '0.95rem' }}>
-                                            <ShieldCheck size={20} /> {uploadedFile.name} ({projectsList.length} loaded)
-                                        </div>
-                                    ) : (
-                                        <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-                                            <UploadCloud size={24} />
-                                            <span style={{ fontSize: '0.9rem' }}>Upload MPPR Excel to auto-fill narrative data</span>
-                                        </div>
+                                    <UploadCloud size={20} style={{ color: 'var(--text-secondary)' }} />
+                                    <div style={{ flex: 1 }}>
+                                        {uploadLoading ? (
+                                            <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
+                                                <Loader2 size={16} className="spin" /> Processing...
+                                            </span>
+                                        ) : uploadedFile ? (
+                                            <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                {uploadedFile.name} ({projectsList.length} loaded)
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                Click to upload MPPR Excel (auto-fill)
+                                            </span>
+                                        )}
+                                    </div>
+                                    {uploadedFile && (
+                                        <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />
                                     )}
                                 </div>
                             </div>

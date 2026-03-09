@@ -14,7 +14,7 @@ const ChatView = () => {
         {
             id: '1',
             role: 'assistant',
-            content: "Hello! I am the Sentra Portfolio RAG Assistant. I have access to the latest NDA MPPR and EAC reference data. How can I help you analyze the portfolio today?"
+            content: "Hello! I am the NDA Portfolio RAG Assistant. I have access to the latest NDA MPPR and EAC reference data. How can I help you analyze the portfolio today?"
         }
     ]);
     const [input, setInput] = useState('');
