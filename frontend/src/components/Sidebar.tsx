@@ -25,7 +25,7 @@ const Sidebar = () => {
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 >
                     <FileText size={18} />
-                    <span>Validate Narrative</span>
+                    <span>Individual Narrative Validation</span>
                 </NavLink>
 
                 <NavLink
@@ -33,7 +33,7 @@ const Sidebar = () => {
                     className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                 >
                     <ListChecks size={18} />
-                    <span>Batch Validate</span>
+                    <span>Batch Narrative Validation</span>
                 </NavLink>
 
                 <NavLink
