@@ -118,7 +118,7 @@ const BatchValidateView = () => {
     };
 
     return (
-        <div className="validate-view">
+        <div className="validate-view page-container">
             <div className="page-header">
                 <h1 className="page-title">Batch Narrative Validation</h1>
                 <p className="page-subtitle">Process and validate an entire MPPR Excel sheet at once.</p>
@@ -147,22 +147,23 @@ const BatchValidateView = () => {
                 </div>
             )}
 
-            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px', height: 'calc(100vh - 180px)' }}>
+            <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(350px, 1fr) 2fr', gap: '32px' }}>
 
                 {/* Left Column: Input Form */}
-                <div className="input-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                <div className="input-section" style={{ paddingRight: '8px' }}>
                     <div className="card">
                         <h2 className="card-title">Run Batch Validation</h2>
 
                         <div className="form-group">
                             <label className="form-label">MPPR Data Source (Excel)</label>
                             <div style={{
-                                border: '2px dashed var(--border-color)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '12px',
+                                border: '1px solid var(--border-color)',
                                 borderRadius: '8px',
-                                padding: '24px',
-                                textAlign: 'center',
+                                padding: '8px 12px',
                                 background: 'var(--bg-secondary)',
-                                cursor: 'pointer',
                                 position: 'relative'
                             }}>
                                 <input
@@ -172,16 +173,20 @@ const BatchValidateView = () => {
                                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                     title="Upload Excel File"
                                 />
-                                {uploadedFile ? (
-                                    <div style={{ color: 'var(--accent-blue)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
-                                        <ShieldCheck size={32} />
-                                        <span>{uploadedFile.name}</span>
-                                    </div>
-                                ) : (
-                                    <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                        <UploadCloud size={32} />
-                                        <span>Click or drag to upload Excel file</span>
-                                    </div>
+                                <UploadCloud size={20} style={{ color: 'var(--text-secondary)' }} />
+                                <div style={{ flex: 1 }}>
+                                    {uploadedFile ? (
+                                        <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                            {uploadedFile.name}
+                                        </span>
+                                    ) : (
+                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                            Click to upload MPPR Excel
+                                        </span>
+                                    )}
+                                </div>
+                                {uploadedFile && (
+                                    <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />
                                 )}
                             </div>
                         </div>
@@ -208,7 +213,7 @@ const BatchValidateView = () => {
                 </div>
 
                 {/* Right Column: Results Table */}
-                <div className="results-section" style={{ height: '100%', overflowY: 'auto', paddingRight: '8px' }}>
+                <div className="results-section">
                     {!results.length && !loading && (
                         <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', opacity: 0.5, padding: '60px 20px' }}>
                             <ShieldCheck size={48} style={{ marginBottom: '16px' }} />
