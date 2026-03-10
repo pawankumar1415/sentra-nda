@@ -247,20 +247,33 @@ def run_validate(
     # 4 — call GPT
     user_message = _build_user_message(narrative, project_name, chunks, eac_data)
 
-    gpt  = _get_gpt_client()
-    resp = gpt.chat.completions.create(
-        model=_chat_deployment(),
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user",   "content": user_message},
-        ],
-        temperature=1,      # gpt-5.1-chat only supports default temperature (1)
-        response_format={"type": "json_object"},
-    )
+    try:
+        resp = gpt.chat.completions.create(
+            model=_chat_deployment(),
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user",   "content": user_message},
+            ],
+            temperature=1,      # gpt-5.1-chat only supports default temperature (1)
+            response_format={"type": "json_object"},
+        )
+        raw_json = resp.choices[0].message.content
+    except Exception as e:
+        error_msg = str(e)
+        if "content_filter" in error_msg or "ResponsibleAIPolicyViolation" in error_msg:
+            raise Exception("Azure OpenAI Content Filter Triggered: The narrative was flagged by Microsoft's responsible AI policies (e.g., hate speech, violence, or jailbreak attempts). Please revise the narrative and try again.")
+        raise e
 
-    raw_json = resp.choices[0].message.content
     try:
         result = json.loads(raw_json)
+        # Hard-enforce the threshold rules for consistency
+        score = result.get("layer1", {}).get("compliance_score", 0)
+        if score >= 8:
+            result["overall_verdict"] = "PASS"
+        elif score >= 6:
+            result["overall_verdict"] = "PASS_WITH_WARNINGS"
+        else:
+            result["overall_verdict"] = "FAIL"
     except json.JSONDecodeError:
         result = {"raw_response": raw_json, "parse_error": True}
 
