@@ -247,6 +247,7 @@ def run_validate(
     # 4 — call GPT
     user_message = _build_user_message(narrative, project_name, chunks, eac_data)
 
+    gpt = _get_gpt_client()
     try:
         resp = gpt.chat.completions.create(
             model=_chat_deployment(),

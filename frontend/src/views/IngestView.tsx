@@ -71,7 +71,7 @@ const IngestView = () => {
 
                     <div
                         className="upload-dropzone"
-                        style={{ border: '2px dashed var(--border-color)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: mpprFile ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }}
+                        style={{ border: '2px dashed var(--accent-blue)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: mpprFile ? 'var(--accent-blue-glow)' : 'var(--bg-secondary)' }}
                         onClick={() => mpprInputRef.current?.click()}
                     >
                         <input
@@ -135,7 +135,7 @@ const IngestView = () => {
 
                     <div
                         className="upload-dropzone"
-                        style={{ border: '2px dashed var(--border-color)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: eacFile ? 'rgba(99, 102, 241, 0.05)' : 'transparent' }}
+                        style={{ border: '2px dashed var(--accent-indigo)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: eacFile ? 'rgba(79, 70, 229, 0.1)' : 'var(--bg-secondary)' }}
                         onClick={() => eacInputRef.current?.click()}
                     >
                         <input

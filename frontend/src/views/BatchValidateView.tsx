@@ -160,11 +160,12 @@ const BatchValidateView = () => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '12px',
-                                border: '1px solid var(--border-color)',
+                                border: '1px dashed var(--accent-blue)',
                                 borderRadius: '8px',
-                                padding: '8px 12px',
-                                background: 'var(--bg-secondary)',
-                                position: 'relative'
+                                padding: '12px 16px',
+                                background: 'var(--accent-blue-glow)',
+                                position: 'relative',
+                                cursor: 'pointer'
                             }}>
                                 <input
                                     type="file"
@@ -173,7 +174,7 @@ const BatchValidateView = () => {
                                     style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                     title="Upload Excel File"
                                 />
-                                <UploadCloud size={20} style={{ color: 'var(--text-secondary)' }} />
+                                <UploadCloud size={20} style={{ color: 'var(--accent-blue)' }} />
                                 <div style={{ flex: 1 }}>
                                     {uploadedFile ? (
                                         <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
