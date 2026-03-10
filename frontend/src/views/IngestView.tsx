@@ -63,7 +63,7 @@ const IngestView = () => {
             <div className="layout-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
 
                 {/* MPPR Upload Card */}
-                <div className="card">
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <h2 className="card-title">Upload NDA MPPR Reference Data</h2>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '24px' }}>
                         Upload standard monthly period reports. The period name (e.g., P08) will be extracted automatically.
@@ -71,7 +71,7 @@ const IngestView = () => {
 
                     <div
                         className="upload-dropzone"
-                        style={{ border: '2px dashed var(--accent-blue)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: mpprFile ? 'var(--accent-blue-glow)' : 'var(--bg-secondary)' }}
+                        style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', border: '2px dashed var(--accent-blue)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: mpprFile ? 'var(--accent-blue-glow)' : 'var(--bg-secondary)' }}
                         onClick={() => mpprInputRef.current?.click()}
                     >
                         <input
@@ -127,7 +127,7 @@ const IngestView = () => {
                 </div>
 
                 {/* EAC Upload Card */}
-                <div className="card">
+                <div className="card" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
                     <h2 className="card-title">Upload EAC Variance Data</h2>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '24px' }}>
                         Upload the lifecycle EAC variance sheet showing major monetary shifts and delays.
@@ -135,7 +135,7 @@ const IngestView = () => {
 
                     <div
                         className="upload-dropzone"
-                        style={{ border: '2px dashed var(--accent-indigo)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: eacFile ? 'rgba(79, 70, 229, 0.1)' : 'var(--bg-secondary)' }}
+                        style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', border: '2px dashed var(--accent-indigo)', borderRadius: '12px', padding: '40px 20px', textAlign: 'center', cursor: 'pointer', transition: 'var(--transition)', background: eacFile ? 'rgba(79, 70, 229, 0.1)' : 'var(--bg-secondary)' }}
                         onClick={() => eacInputRef.current?.click()}
                     >
                         <input
@@ -163,10 +163,10 @@ const IngestView = () => {
 
                     <div style={{ marginTop: '24px' }}>
                         <button
-                            className="btn btn-secondary"
+                            className="btn btn-primary"
                             disabled={!eacFile || eacLoading}
                             onClick={handleEacUpload}
-                            style={{ width: '100%', borderColor: 'var(--accent-indigo)', color: 'var(--accent-indigo)' }}
+                            style={{ width: '100%' }}
                         >
                             {eacLoading ? <><Loader2 size={16} className="spin" style={{ animation: 'spin 1s linear infinite' }} /> Processing...</> : 'Upload & Process EAC Data'}
                         </button>
