@@ -4,7 +4,7 @@ import { MessageSquare, FileText, Settings, ListChecks } from 'lucide-react';
 const Sidebar = () => {
     return (
         <aside className="sidebar">
-            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px', padding: '16px', background: 'var(--sellafield-dark-teal)', borderRadius: '8px' }}>
+            <div className="sidebar-header" style={{ display: 'flex', justifyContent: 'center', marginBottom: '40px' }}>
                 <img src="https://sellafield-sentra.netlify.app/assets/sellafield-logo.png" alt="Sellafield Logo" style={{ width: '160px', objectFit: 'contain' }} />
             </div>
 
@@ -42,7 +42,7 @@ const Sidebar = () => {
                 </NavLink>
             </nav>
 
-            <div style={{ marginTop: 'auto', padding: '12px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <div style={{ marginTop: 'auto', padding: '12px', fontSize: '0.8rem', color: '#6b7280' }}>
                 <p>Azure Connected</p>
             </div>
         </aside>

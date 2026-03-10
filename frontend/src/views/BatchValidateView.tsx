@@ -238,6 +238,9 @@ const BatchValidateView = () => {
                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                                         Period: <strong>{period}</strong> | Processed: <strong>{progress.current} / {progress.total || total}</strong>
                                     </div>
+                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
+                                        Thresholds: 8-10 (Pass) &bull; 6-7 (Pass with Warning) &bull; &lt; 6 (Fail)
+                                    </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: '12px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
