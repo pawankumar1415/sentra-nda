@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X, Download } from 'lucide-react';
 import { listProjects, validateNarrative } from '../services/api';
+import * as XLSX from 'xlsx';
 
 const BatchValidateView = () => {
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -115,6 +116,31 @@ const BatchValidateView = () => {
         } else {
             setExpandedRow(projectName);
         }
+    };
+
+    const handleExport = () => {
+        if (!results.length) return;
+
+        // Flatten the deeply nested JSON into simple rows for Excel
+        const exportData = results.map(res => ({
+            'Project Name': res.project_name || res._meta?.project_name,
+            'Period': res._meta?.period || period,
+            'Overall Verdict': res.overall_verdict,
+            'Compliance Score': res.layer1?.compliance_score || 0,
+            'EAC Variance (£m)': res._meta?.eac_variance_m || 0,
+            'Schedule Variance (Days)': res._meta?.schedule_days || 0,
+            'Compliance Issues': res.layer1?.issues?.join('\n') || 'None',
+            'Data Inconsistencies': res.layer2?.issues?.join('\n') || 'None',
+            'Original Validation Input': res._meta?.narrative_excerpt || 'N/A',
+            'AI Rewritten Narrative': res.rewritten_narrative || 'N/A'
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Batch Validation Results");
+
+        // Generate download
+        XLSX.writeFile(wb, `Sentra_Batch_Validation_${period || 'Export'}.xlsx`);
     };
 
     return (
@@ -243,16 +269,27 @@ const BatchValidateView = () => {
                                         Thresholds: 8-10 (Pass) &bull; 6-7 (Pass with Warning) &bull; &lt; 6 (Fail)
                                     </div>
                                 </div>
-                                <div style={{ display: 'flex', gap: '12px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                                        <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-pass)' }}></span> Pass
+                                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', gap: '12px', marginRight: '16px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-pass)' }}></span> Pass
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-warn)' }}></span> Warn
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+                                            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-fail)' }}></span> Fail
+                                        </div>
                                     </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                                        <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-warn)' }}></span> Warn
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
-                                        <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: 'var(--status-fail)' }}></span> Fail
-                                    </div>
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={results.length === 0}
+                                        className="btn btn-outline"
+                                        style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 12px', fontSize: '0.85rem' }}
+                                    >
+                                        <Download size={14} />
+                                        Export Excel
+                                    </button>
                                 </div>
                             </div>
 
