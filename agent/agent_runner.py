@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # Configuration: Agent name and version
 # Change AGENT_NAME to force a new agent (old one stays in Foundry but unused).
 # ─────────────────────────────────────────────────────────────────────────────
-AGENT_NAME = "nda-narrative-validator-v1"
+AGENT_NAME = "nda-narrative-validator-v2"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
