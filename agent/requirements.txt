@@ -1,7 +1,6 @@
 azure-functions
-azure-ai-projects
-azure-ai-agents
-azure-search-documents
+azure-ai-projects>=2.0.0b4
 azure-identity
 pandas
 openpyxl
+azure-search-documents
