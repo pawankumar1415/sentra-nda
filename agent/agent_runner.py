@@ -15,7 +15,6 @@ from typing import Optional
 
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
-    Agent,
     AzureAISearchTool,
     FunctionTool,
     ToolSet,
