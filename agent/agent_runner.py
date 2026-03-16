@@ -219,7 +219,7 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
 
 def _dispatch_tool(fn_name: str, fn_args: dict) -> str:
     """Dispatches a tool call by name to the correct Python function."""
-    from agent import tools
+    import tools
     fn = getattr(tools, fn_name, None)
     if fn is None:
         return json.dumps({"error": f"Unknown tool: {fn_name}"})

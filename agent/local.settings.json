@@ -6,7 +6,7 @@
         "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
         "AZURE_FOUNDRY_PROJECT_ENDPOINT": "https://movar-secure-azure-resource.services.ai.azure.com/api/projects/movar-secure-azure",
         "AZURE_FOUNDRY_MODEL_DEPLOYMENT": "gpt-5.1-chat",
-        "AZURE_AI_SEARCH_CONNECTION_NAME": "/subscriptions/530e4a26-4cf6-44b1-9549-84ae1b36b4d9/resourceGroups/rg-Yash.Desai-2452/providers/Microsoft.Search/searchServices/movar-nda-aisearch",
+        "AZURE_AI_SEARCH_CONNECTION_NAME": "movar-nda-aisearch",
         "AZURE_SEARCH_INDEX_NAME": "nda-mppr-projects",
         "AZURE_SEARCH_ENDPOINT": "https://movar-nda-aisearch.search.windows.net",
         "USE_AI_SEARCH": "true"
