@@ -18,8 +18,8 @@ import logging
 
 import azure.functions as func
 
-from agent.ingest_helper import ensure_index_exists, run_ingest
-from agent.agent_runner import validate_narrative
+from ingest_helper import ensure_index_exists, run_ingest
+from agent_runner import validate_narrative
 
 logger = logging.getLogger(__name__)
 

@@ -22,7 +22,7 @@ from functools import lru_cache
 
 import pandas as pd
 
-from agent.config import (
+from config import (
     EAC_VARIANCE_FILE,
     EAC_VARIANCE_THRESHOLD_LOW,
     EAC_VARIANCE_THRESHOLD_HIGH,

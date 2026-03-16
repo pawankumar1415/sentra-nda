@@ -37,14 +37,14 @@ from azure.ai.agents.models import (
 )
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 
-from agent.config import (
+from config import (
     PROJECT_ENDPOINT,
     MODEL_DEPLOYMENT_NAME,
     AZURE_SEARCH_CONNECTION_NAME,
     AZURE_SEARCH_INDEX_NAME,
 )
-from agent.system_prompt import get_system_prompt
-from agent.tools import AGENT_TOOLS
+from system_prompt import get_system_prompt
+from tools import AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
 
