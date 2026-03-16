@@ -1,8 +1,11 @@
 """
 agent/agent_runner.py — Ultra-Resilient Next Gen SDK Version
 
-This version correctly handles the deeply nested AzureAISearchTool structure 
-required by more recent 2.x Beta SDKs, while maintaining fallbacks.
+This version correctly handles:
+1. Deeply nested AzureAISearchTool structure (v2.0.0b4+)
+2. Manual FunctionTool mapping to bypass broken High-Level SDK helpers.
+3. PromptAgentDefinition for standard instruction-based agents in v2.x Beta.
+4. Multiple fallbacks for agent listing, creation, and status checking.
 """
 
 from __future__ import annotations
@@ -11,7 +14,8 @@ import json
 import logging
 import os
 import time
-from typing import Optional
+import inspect
+from typing import Optional, Any, Callable
 
 # Standard project client
 from azure.ai.projects import AIProjectClient
@@ -55,6 +59,47 @@ def _get_project_client() -> AIProjectClient:
     )
 
 
+def _get_function_schema(func: Callable) -> dict:
+    """
+    Manually generates a JSON Schema for a Python function.
+    Bypasses the broken SDK helper for FunctionTool(functions=[...]).
+    """
+    spec = inspect.getfullargspec(func)
+    params = {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+    
+    # Simple type mapping
+    type_map = {
+        str: "string",
+        int: "integer",
+        float: "number",
+        bool: "boolean",
+        dict: "object",
+        list: "array"
+    }
+
+    # Annotations are in spec.annotations
+    # Defaults are in spec.defaults (trailing arguments)
+    defaults = spec.defaults or []
+    default_map = dict(zip(spec.args[-len(defaults):], defaults)) if defaults else {}
+
+    for arg in spec.args:
+        if arg == 'self': continue
+        
+        arg_type = spec.annotations.get(arg, str)
+        # Handle Optional/Union if needed
+        json_type = type_map.get(arg_type, "string")
+        
+        params["properties"][arg] = {"type": json_type}
+        if arg not in default_map:
+            params["required"].append(arg)
+
+    return params
+
+
 def _get_or_create_agent(client: AIProjectClient):
     """
     Tries multiple methods to find existing agents, then creates one if not found.
@@ -70,7 +115,6 @@ def _get_or_create_agent(client: AIProjectClient):
         method = getattr(client.agents, method_name, None)
         if method:
             try:
-                # Some return iterators, some lists
                 agents_list = list(method())
                 logger.info("Found existing agents using: client.agents.%s()", method_name)
                 found_method = True
@@ -100,7 +144,6 @@ def _get_or_create_agent(client: AIProjectClient):
         
         if SearchToolClass and ToolResourceClass and IndexResourceClass:
             try:
-                # v2.0.0b4 nested way
                 index_resource = IndexResourceClass(
                     project_connection_id=AZURE_SEARCH_CONNECTION_NAME,
                     index_name=AZURE_SEARCH_INDEX_NAME
@@ -108,51 +151,64 @@ def _get_or_create_agent(client: AIProjectClient):
                 tool_resource = ToolResourceClass(indexes=[index_resource])
                 tools_list.append(SearchToolClass(azure_ai_search=tool_resource))
                 logger.info("Search tool added (nested structure)")
-            except Exception as e:
-                logger.warning("Failed to create nested SearchTool: %s. Trying flat structure...", e)
-                # Fallback to flat way (older 2.x versions)
+            except Exception:
                 try:
                     tools_list.append(SearchToolClass(
                         index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
                         index_name=AZURE_SEARCH_INDEX_NAME
                     ))
-                    logger.info("Search tool added (flat structure)")
-                except Exception as e2:
-                    logger.error("Failed to add Search tool entirely: %s", e2)
-        elif SearchToolClass:
-            # Maybe it's a version that takes flat args but doesn't have Resource classes
-            try:
-                tools_list.append(SearchToolClass(
-                    index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
-                    index_name=AZURE_SEARCH_INDEX_NAME
-                ))
-                logger.info("Search tool added (flat fallback)")
-            except Exception as e:
-                logger.error("Failed to add Search tool: %s", e)
+                except Exception: pass
 
-    # 2. Function Tools
+    # 2. Function Tools - MANUAL MAPPING (v2.0.0b4+)
     FunctionToolClass = getattr(models, "FunctionTool", None)
     if FunctionToolClass:
-        tools_list.append(FunctionToolClass(functions=AGENT_TOOLS))
+        for func in AGENT_TOOLS:
+            try:
+                schema = _get_function_schema(func)
+                tool = FunctionToolClass(
+                    name=func.__name__,
+                    description=func.__doc__ or "No description provided.",
+                    parameters=schema,
+                    strict=True
+                )
+                tools_list.append(tool)
+                logger.info("Function tool added: %s", func.__name__)
+            except Exception as e:
+                logger.error("Failed to add function tool %s: %s", func.__name__, e)
 
-    create_kwargs = {
-        "model": MODEL_DEPLOYMENT_NAME,
-        "name": AGENT_NAME,
-        "instructions": get_system_prompt(),
-    }
+    # 3. Agent Creation - HANDLING PromptAgentDefinition (v2.0.0b4+)
+    create_method = getattr(client.agents, "create_agent", None) or getattr(client.agents, "_create_agent", None)
+    if not create_method:
+        raise RuntimeError("Could not find a method to create agents")
 
-    # Handle ToolSet if it exists
-    ToolSetClass = getattr(models, "ToolSet", None) or getattr(models, "Toolset", None)
-    if ToolSetClass:
-        ts = ToolSetClass()
-        for t in tools_list:
-            if hasattr(ts, 'add_tool'): ts.add_tool(t)
-            elif hasattr(ts, 'tools'): ts.tools.append(t)
-        create_kwargs["toolset"] = ts
-    else:
-        create_kwargs["tools"] = tools_list
+    try:
+        # High-level attempt (OpenAI-like)
+        agent = create_method(
+            model=MODEL_DEPLOYMENT_NAME,
+            name=AGENT_NAME,
+            instructions=get_system_prompt(),
+            tools=tools_list
+        )
+    except TypeError:
+        # Low-level attempt (requires PromptAgentDefinition)
+        logger.info("Falling back to PromptAgentDefinition for creation...")
+        PromptDefClass = getattr(models, "PromptAgentDefinition", None)
+        if not PromptDefClass:
+            raise RuntimeError("PromptAgentDefinition class missing in models")
+            
+        definition = PromptDefClass(
+            model=MODEL_DEPLOYMENT_NAME,
+            instructions=get_system_prompt(),
+            tools=tools_list
+        )
+        # Check signature again
+        sig = inspect.signature(create_method)
+        if "definition" in sig.parameters:
+            agent = create_method(name=AGENT_NAME, definition=definition)
+        else:
+            # Maybe it just takes definition?
+            agent = create_method(definition)
 
-    agent = client.agents.create_agent(**create_kwargs)
     logger.info("Agent created: %s", agent.id)
     return agent
 
@@ -172,17 +228,15 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
 
     while True:
         status_str = str(run.status).lower()
-        
-        # Terminal states
         if "completed" in status_str: break
-        if "failed" in status_str or "cancelled" in status_str or "expired" in status_str: 
+        if any(kw in status_str for kw in ["failed", "cancelled", "expired"]): 
             break
         
-        # Action required
         if "requires_action" in status_str:
             tool_outputs = []
-            if hasattr(run, 'required_action') and run.required_action:
-                for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+            submit_data = getattr(run, 'required_action', None)
+            if submit_data and hasattr(submit_data, 'submit_tool_outputs'):
+                for tool_call in submit_data.submit_tool_outputs.tool_calls:
                     fn_name = tool_call.function.name
                     fn_args = json.loads(tool_call.function.arguments)
                     logger.info("Agent calling tool: %s", fn_name)
@@ -204,11 +258,9 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
         error_msg  = getattr(last_error, "message", str(last_error))
         raise RuntimeError(f"Agent run failed: {error_msg}")
 
-    # List messages
     all_messages = list(client.agents.list_messages(thread_id=thread_id))
     for msg in all_messages:
         if msg.role == "assistant":
-            # The structure might be list of blocks or just content
             content = getattr(msg, "content", [])
             if isinstance(content, list):
                 return "".join(block.text.value for block in content if hasattr(block, "text"))
