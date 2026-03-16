@@ -86,15 +86,32 @@ def _get_function_schema(func: Callable) -> dict:
     return params
 
 
-def _build_openai_tools() -> list[dict]:
+def _build_responses_api_tools() -> list[dict]:
     """
-    Builds the OpenAI-format tool definitions for the Responses API.
-    This is what gets passed to the OpenAI client, NOT the Azure SDK models.
+    Builds tool definitions for the OpenAI Responses API.
+    Responses API format: name/description/parameters are TOP-LEVEL, not nested.
     """
-    openai_tools = []
+    tools = []
     for func in AGENT_TOOLS:
         schema = _get_function_schema(func)
-        openai_tools.append({
+        tools.append({
+            "type": "function",
+            "name": func.__name__,
+            "description": (func.__doc__ or "").strip(),
+            "parameters": schema,
+        })
+    return tools
+
+
+def _build_chat_completions_tools() -> list[dict]:
+    """
+    Builds tool definitions for the Chat Completions API.
+    Chat Completions format: name/description/parameters are NESTED under 'function'.
+    """
+    tools = []
+    for func in AGENT_TOOLS:
+        schema = _get_function_schema(func)
+        tools.append({
             "type": "function",
             "function": {
                 "name": func.__name__,
@@ -102,7 +119,7 @@ def _build_openai_tools() -> list[dict]:
                 "parameters": schema,
             }
         })
-    return openai_tools
+    return tools
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,33 +161,30 @@ def validate_narrative(
     # Get the OpenAI client from the Azure AI Projects client
     openai_client = client.get_openai_client()
 
-    # Build tools in OpenAI format
-    openai_tools = _build_openai_tools()
-
     # Build the user prompt
     user_prompt = (
         f"Please validate the narrative for **{project_name}** ({period}):\n\n"
         f"{narrative_text}"
     )
 
-    logger.info("Sending validation request to OpenAI Responses API for: %s", project_name)
+    logger.info("Sending validation request for: %s", project_name)
 
-    # --- Responses API Call ---
-    # Try the new Responses API first (openai >= 1.66), fall back to Chat Completions
+    # --- Try Responses API first, fall back to Chat Completions ---
     try:
-        result_text = _run_with_responses_api(openai_client, user_prompt, openai_tools)
+        result_text = _run_with_responses_api(openai_client, user_prompt)
     except (AttributeError, TypeError) as e:
         logger.warning("Responses API not available (%s), falling back to Chat Completions", e)
-        result_text = _run_with_chat_completions(openai_client, user_prompt, openai_tools)
+        result_text = _run_with_chat_completions(openai_client, user_prompt)
 
     return {"thread_id": thread_id or "responses-api", "validation_result": result_text}
 
 
-def _run_with_responses_api(openai_client, user_prompt: str, openai_tools: list) -> str:
+def _run_with_responses_api(openai_client, user_prompt: str) -> str:
     """
     Uses the new OpenAI Responses API (openai >= 1.66).
     Handles tool calls in a loop.
     """
+    openai_tools = _build_responses_api_tools()
     response = openai_client.responses.create(
         model=MODEL_DEPLOYMENT_NAME,
         instructions=get_system_prompt(),
@@ -221,10 +235,11 @@ def _run_with_responses_api(openai_client, user_prompt: str, openai_tools: list)
     return "\n".join(text_parts) if text_parts else "(No response from agent)"
 
 
-def _run_with_chat_completions(openai_client, user_prompt: str, openai_tools: list) -> str:
+def _run_with_chat_completions(openai_client, user_prompt: str) -> str:
     """
     Fallback: Uses the standard Chat Completions API with tool calling.
     """
+    openai_tools = _build_chat_completions_tools()
     messages = [
         {"role": "system", "content": get_system_prompt()},
         {"role": "user", "content": user_prompt},
