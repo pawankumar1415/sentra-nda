@@ -1,8 +1,8 @@
 """
-agent/agent_runner.py — Highly Resilient Next Gen SDK Version
+agent/agent_runner.py — Ultra-Resilient Next Gen SDK Version
 
-This version is designed to be compatible with multiple versions of the 
-Azure AI Projects SDK 2.x, using flexible imports and string-based status checks.
+This version uses a multi-fallback approach for listing agents and status 
+checking to handle the shifting API of the azure-ai-projects 2.x preview SDK.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from tools import AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
 
-# Agente Name v3
+# Agent Name v3
 AGENT_NAME = "nda-narrative-validator-v3"
 
 
@@ -57,11 +57,34 @@ def _get_project_client() -> AIProjectClient:
 
 def _get_or_create_agent(client: AIProjectClient):
     """
-    Creates agent using whatever tool pattern the SDK supports.
+    Tries multiple methods to find existing agents, then creates one if not found.
+    Handles the 'list_agents' vs 'list' vs 'get_agents' confusion in Beta SDKs.
     """
-    for agent in client.agents.list_agents():
-        if agent.name == AGENT_NAME:
-            logger.info("Reusing existing agent: %s (%s)", agent.name, agent.id)
+    agents_list = []
+    
+    # Try all possible names for listing agents in different 2.x previews
+    list_methods = ["list_agents", "list", "get_agents"]
+    found_method = False
+    
+    for method_name in list_methods:
+        method = getattr(client.agents, method_name, None)
+        if method:
+            try:
+                agents_list = list(method())
+                logger.info("Found existing agents using: client.agents.%s()", method_name)
+                found_method = True
+                break
+            except Exception as e:
+                logger.debug("Failed to call client.agents.%s(): %s", method_name, e)
+    
+    if not found_method:
+        logger.warning("Could not find a method to list agents. Creating one blindly.")
+
+    for agent in agents_list:
+        # Check for name (some SDK versions use 'name' property, others 'display_name')
+        name_val = getattr(agent, "name", None) or getattr(agent, "display_name", None)
+        if name_val == AGENT_NAME:
+            logger.info("Reusing existing agent: %s (%s)", name_val, agent.id)
             return agent
 
     logger.info("Creating new agent: %s", AGENT_NAME)
@@ -70,21 +93,17 @@ def _get_or_create_agent(client: AIProjectClient):
     tools_list = []
     
     # 1. Search Tool
-    if use_ai_search:
-        # Some SDK versions use AzureAISearchTool, others AISearchTool
-        SearchToolClass = getattr(models, "AzureAISearchTool", None) or getattr(models, "AISearchTool", None)
-        if SearchToolClass:
-            tools_list.append(SearchToolClass(
-                index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
-                index_name=AZURE_SEARCH_INDEX_NAME,
-            ))
-            logger.info("Search tool added")
+    SearchToolClass = getattr(models, "AzureAISearchTool", None) or getattr(models, "AISearchTool", None)
+    if use_ai_search and SearchToolClass:
+        tools_list.append(SearchToolClass(
+            index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
+            index_name=AZURE_SEARCH_INDEX_NAME,
+        ))
 
     # 2. Function Tools
     FunctionToolClass = getattr(models, "FunctionTool", None)
     if FunctionToolClass:
         tools_list.append(FunctionToolClass(functions=AGENT_TOOLS))
-        logger.info("Function tools added")
 
     create_kwargs = {
         "model": MODEL_DEPLOYMENT_NAME,
@@ -97,11 +116,8 @@ def _get_or_create_agent(client: AIProjectClient):
     if ToolSetClass:
         ts = ToolSetClass()
         for t in tools_list:
-            # Check if add_tool exists, otherwise use list
-            if hasattr(ts, 'add_tool'):
-                ts.add_tool(t)
-            elif hasattr(ts, 'tools'):
-                ts.tools.append(t)
+            if hasattr(ts, 'add_tool'): ts.add_tool(t)
+            elif hasattr(ts, 'tools'): ts.tools.append(t)
         create_kwargs["toolset"] = ts
     else:
         create_kwargs["tools"] = tools_list
@@ -124,40 +140,42 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
     )
     logger.info("Run created: %s (status: %s)", run.id, run.status)
 
-    # Use string comparison for status to avoid Enum import issues
-    # SDK usually returns strings or objects that serialize to strings (CamelCase or lowercase)
-    while str(run.status).lower() in ("queued", "in_progress", "requires_action", "runstatus.queued", "runstatus.in_progress", "runstatus.requires_action"):
-        time.sleep(2)
-        run = client.agents.get_run(thread_id=thread_id, run_id=run.id)
-        logger.info("Run status: %s", run.status)
-
-        if str(run.status).lower() in ("requires_action", "runstatus.requires_action"):
+    # LOOP UNTIL TERMINAL STATE
+    # Terminal states: completed, failed, cancelled, expired
+    # Active states: queued, in_progress, requires_action, cancelling
+    while True:
+        status_str = str(run.status).lower()
+        if "completed" in status_str: break
+        if "failed" in status_str or "cancelled" in status_str or "expired" in status_str: break
+        
+        if "requires_action" in status_str:
             tool_outputs = []
             for tool_call in run.required_action.submit_tool_outputs.tool_calls:
                 fn_name = tool_call.function.name
                 fn_args = json.loads(tool_call.function.arguments)
-
-                logger.info("Agent calling tool: %s(%s)", fn_name, fn_args)
+                logger.info("Agent calling tool: %s", fn_name)
                 output = _dispatch_tool(fn_name, fn_args)
-                tool_outputs.append({
-                    "tool_call_id": tool_call.id,
-                    "output": output,
-                })
+                tool_outputs.append({"tool_call_id": tool_call.id, "output": output})
 
             client.agents.submit_tool_outputs_to_run(
-                thread_id=thread_id,
-                run_id=run.id,
-                tool_outputs=tool_outputs,
+                thread_id=thread_id, run_id=run.id, tool_outputs=tool_outputs
             )
+            # Re-fetch immediately after tool submission
+            run = client.agents.get_run(thread_id=thread_id, run_id=run.id)
+            continue
 
-    if str(run.status).lower() in ("failed", "runstatus.failed"):
+        time.sleep(2)
+        run = client.agents.get_run(thread_id=thread_id, run_id=run.id)
+        logger.info("Run status: %s", run.status)
+
+    if "failed" in str(run.status).lower():
         last_error = getattr(run, "last_error", None)
-        error_code = getattr(last_error, "code", "unknown")
         error_msg  = getattr(last_error, "message", str(last_error))
-        logger.error("Run FAILED — code: %s | message: %s", error_code, error_msg)
-        raise RuntimeError(f"Agent run failed [{error_code}]: {error_msg}")
+        raise RuntimeError(f"Agent run failed: {error_msg}")
 
+    # List messages
     all_messages = list(client.agents.list_messages(thread_id=thread_id))
+    # Some SDKs return newest first, some oldest first. We want the latest assistant message.
     for msg in all_messages:
         if msg.role == "assistant":
             return "".join(block.text.value for block in msg.content if hasattr(block, "text"))
