@@ -1,5 +1,7 @@
+azure-functions
 azure-ai-projects
 azure-ai-agents
+azure-search-documents
 azure-identity
 pandas
 openpyxl
