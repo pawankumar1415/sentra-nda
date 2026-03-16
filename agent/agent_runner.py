@@ -1,8 +1,8 @@
 """
-agent/agent_runner.py — Next Gen Foundry SDK (2.x) Version
+agent/agent_runner.py — Highly Resilient Next Gen SDK Version
 
-This version uses the azure-ai-projects >= 2.0.0 SDK which targets the
-"New Foundry" experience.
+This version is designed to be compatible with multiple versions of the 
+Azure AI Projects SDK 2.x, using flexible imports and string-based status checks.
 """
 
 from __future__ import annotations
@@ -13,14 +13,12 @@ import os
 import time
 from typing import Optional
 
+# Standard project client
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import (
-    AzureAISearchTool,
-    FunctionTool,
-    ToolSet,
-    RunStatus,
-)
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
+
+# Flexible imports for models
+import azure.ai.projects.models as models
 
 from config import (
     PROJECT_ENDPOINT,
@@ -33,7 +31,7 @@ from tools import AGENT_TOOLS
 
 logger = logging.getLogger(__name__)
 
-# Change AGENT_NAME to force a new agent in the "New Foundry" portal
+# Agente Name v3
 AGENT_NAME = "nda-narrative-validator-v3"
 
 
@@ -57,68 +55,83 @@ def _get_project_client() -> AIProjectClient:
     )
 
 
-def _get_or_create_agent(client: AIProjectClient) -> Agent:
+def _get_or_create_agent(client: AIProjectClient):
     """
-    Returns an existing agent, or creates a new one using the ToolSet pattern (SDK 2.x).
+    Creates agent using whatever tool pattern the SDK supports.
     """
-    # Check for existing agent
     for agent in client.agents.list_agents():
         if agent.name == AGENT_NAME:
             logger.info("Reusing existing agent: %s (%s)", agent.name, agent.id)
             return agent
 
     logger.info("Creating new agent: %s", AGENT_NAME)
-
     use_ai_search = os.environ.get("USE_AI_SEARCH", "false").lower() == "true"
     
-    # In SDK 2.x, we use a ToolSet to group tools
-    toolset = ToolSet()
-
+    tools_list = []
+    
     # 1. Search Tool
     if use_ai_search:
-        search_tool = AzureAISearchTool(
-            index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
-            index_name=AZURE_SEARCH_INDEX_NAME,
-        )
-        toolset.add_tool(search_tool)
-        logger.info("AI Search tool ADDED to toolset")
+        # Some SDK versions use AzureAISearchTool, others AISearchTool
+        SearchToolClass = getattr(models, "AzureAISearchTool", None) or getattr(models, "AISearchTool", None)
+        if SearchToolClass:
+            tools_list.append(SearchToolClass(
+                index_connection_id=AZURE_SEARCH_CONNECTION_NAME,
+                index_name=AZURE_SEARCH_INDEX_NAME,
+            ))
+            logger.info("Search tool added")
 
     # 2. Function Tools
-    function_tool = FunctionTool(functions=AGENT_TOOLS)
-    toolset.add_tool(function_tool)
-    logger.info("Function tools ADDED to toolset")
+    FunctionToolClass = getattr(models, "FunctionTool", None)
+    if FunctionToolClass:
+        tools_list.append(FunctionToolClass(functions=AGENT_TOOLS))
+        logger.info("Function tools added")
 
-    agent = client.agents.create_agent(
-        model=MODEL_DEPLOYMENT_NAME,
-        name=AGENT_NAME,
-        instructions=get_system_prompt(),
-        toolset=toolset,
-    )
+    create_kwargs = {
+        "model": MODEL_DEPLOYMENT_NAME,
+        "name": AGENT_NAME,
+        "instructions": get_system_prompt(),
+    }
+
+    # Handle ToolSet if it exists
+    ToolSetClass = getattr(models, "ToolSet", None) or getattr(models, "Toolset", None)
+    if ToolSetClass:
+        ts = ToolSetClass()
+        for t in tools_list:
+            # Check if add_tool exists, otherwise use list
+            if hasattr(ts, 'add_tool'):
+                ts.add_tool(t)
+            elif hasattr(ts, 'tools'):
+                ts.tools.append(t)
+        create_kwargs["toolset"] = ts
+    else:
+        create_kwargs["tools"] = tools_list
+
+    agent = client.agents.create_agent(**create_kwargs)
     logger.info("Agent created: %s", agent.id)
     return agent
 
 
 def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_message: str) -> str:
-    # Add user message
     client.agents.create_message(
         thread_id=thread_id,
         role="user",
         content=user_message,
     )
 
-    # Create run (SDK 2.x uses create_run directly on agents)
     run = client.agents.create_run(
         thread_id=thread_id,
         agent_id=agent_id,
     )
     logger.info("Run created: %s (status: %s)", run.id, run.status)
 
-    while run.status in (RunStatus.QUEUED, RunStatus.IN_PROGRESS, RunStatus.REQUIRES_ACTION):
+    # Use string comparison for status to avoid Enum import issues
+    # SDK usually returns strings or objects that serialize to strings (CamelCase or lowercase)
+    while str(run.status).lower() in ("queued", "in_progress", "requires_action", "runstatus.queued", "runstatus.in_progress", "runstatus.requires_action"):
         time.sleep(2)
         run = client.agents.get_run(thread_id=thread_id, run_id=run.id)
         logger.info("Run status: %s", run.status)
 
-        if run.status == RunStatus.REQUIRES_ACTION:
+        if str(run.status).lower() in ("requires_action", "runstatus.requires_action"):
             tool_outputs = []
             for tool_call in run.required_action.submit_tool_outputs.tool_calls:
                 fn_name = tool_call.function.name
@@ -137,14 +150,13 @@ def _run_and_wait(client: AIProjectClient, agent_id: str, thread_id: str, user_m
                 tool_outputs=tool_outputs,
             )
 
-    if run.status == RunStatus.FAILED:
+    if str(run.status).lower() in ("failed", "runstatus.failed"):
         last_error = getattr(run, "last_error", None)
         error_code = getattr(last_error, "code", "unknown")
         error_msg  = getattr(last_error, "message", str(last_error))
         logger.error("Run FAILED — code: %s | message: %s", error_code, error_msg)
         raise RuntimeError(f"Agent run failed [{error_code}]: {error_msg}")
 
-    # Get response
     all_messages = list(client.agents.list_messages(thread_id=thread_id))
     for msg in all_messages:
         if msg.role == "assistant":
