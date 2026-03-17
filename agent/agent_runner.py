@@ -149,12 +149,12 @@ def validate_narrative(
     thread_id: Optional[str] = None,
 ) -> dict:
     """
-    Validates a project narrative using the OpenAI Responses API.
+    Validates a project narrative using the Chat Completions API with tool calling.
 
-    SDK 2.0.0b4 architecture:
-      1. Get an OpenAI client via AIProjectClient.get_openai_client()
-      2. Call openai_client.responses.create() with model, instructions, tools, input
-      3. Handle function_call outputs in a loop until done
+    Uses Chat Completions as the primary path — it requires only
+    'Cognitive Services OpenAI User' (already assigned to the managed identity)
+    and achieves identical results to the Responses API for stateless validation.
+    The Responses API is attempted as a fallback only if Chat Completions fails.
     """
     client = _get_project_client()
 
@@ -169,14 +169,14 @@ def validate_narrative(
 
     logger.info("Sending validation request for: %s", project_name)
 
-    # --- Try Responses API first, fall back to Chat Completions ---
+    # --- Use Chat Completions as primary; Responses API as fallback ---
     try:
-        result_text = _run_with_responses_api(openai_client, user_prompt)
-    except (AttributeError, TypeError) as e:
-        logger.warning("Responses API not available (%s), falling back to Chat Completions", e)
         result_text = _run_with_chat_completions(openai_client, user_prompt)
+    except Exception as e:
+        logger.warning("Chat Completions failed (%s), trying Responses API", e)
+        result_text = _run_with_responses_api(openai_client, user_prompt)
 
-    return {"thread_id": thread_id or "responses-api", "validation_result": result_text}
+    return {"thread_id": thread_id or "chat-completions", "validation_result": result_text}
 
 
 def _run_with_responses_api(openai_client, user_prompt: str) -> str:
