@@ -14,16 +14,20 @@ Tools:
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import math
-import pathlib
-from functools import lru_cache
+from typing import Optional
 
 import pandas as pd
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
 
 from config import (
-    EAC_VARIANCE_FILE,
+    AZURE_STORAGE_ACCOUNT_URL,
+    AZURE_STORAGE_CONTAINER_NAME,
+    EAC_BLOB_NAME,
     EAC_VARIANCE_THRESHOLD_LOW,
     EAC_VARIANCE_THRESHOLD_HIGH,
     EAC_VARIANCE_THRESHOLD_MAJOR,
@@ -36,17 +40,56 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
-@lru_cache(maxsize=1)
+
+# Module-level cache — refreshes automatically when the blob's ETag changes
+# (i.e. when a new file is uploaded via /api/ingest-eac).
+_eac_df: Optional[pd.DataFrame] = None
+_eac_etag: Optional[str] = None
+_blob_credential = DefaultAzureCredential()
+
+
+def _get_eac_blob_client():
+    blob_service = BlobServiceClient(
+        account_url=AZURE_STORAGE_ACCOUNT_URL,
+        credential=_blob_credential,
+    )
+    return blob_service.get_blob_client(
+        container=AZURE_STORAGE_CONTAINER_NAME,
+        blob=EAC_BLOB_NAME,
+    )
+
+
 def _load_eac_dataframe() -> pd.DataFrame:
-    """Load the lifecycle EAC variance worksheet once and cache it."""
-    if not EAC_VARIANCE_FILE.exists():
-        raise FileNotFoundError(
-            f"EAC variance file not found: {EAC_VARIANCE_FILE}\n"
-            "Ensure 'NDA Data/lifecycle_eac_variance.xlsx' exists in the repo root."
+    """
+    Download the EAC variance Excel from Blob Storage and cache it in memory.
+    Uses the blob's ETag to avoid re-downloading when the file hasn't changed.
+    The cache is automatically refreshed when a new file is uploaded via /api/ingest-eac.
+    """
+    global _eac_df, _eac_etag
+
+    if not AZURE_STORAGE_ACCOUNT_URL:
+        raise RuntimeError(
+            "AZURE_STORAGE_ACCOUNT_URL is not configured. "
+            "Add it to local.settings.json (locally) or Function App Settings (Azure)."
         )
-    df = pd.read_excel(EAC_VARIANCE_FILE, sheet_name=0)
-    # Normalise project names to lowercase stripped for fuzzy matching
+
+    blob_client = _get_eac_blob_client()
+
+    # Check current ETag — only re-download if the file has changed
+    props = blob_client.get_blob_properties()
+    current_etag = props.etag
+
+    if _eac_df is not None and _eac_etag == current_etag:
+        logger.debug("EAC dataframe cache hit (etag=%s).", current_etag)
+        return _eac_df
+
+    logger.info("Downloading EAC variance file from blob storage (etag=%s).", current_etag)
+    data = blob_client.download_blob().readall()
+    df = pd.read_excel(io.BytesIO(data), sheet_name=0)
     df["_name_norm"] = df["Project Name"].str.strip().str.lower()
+
+    _eac_df = df
+    _eac_etag = current_etag
     return df
 
 

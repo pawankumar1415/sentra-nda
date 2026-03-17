@@ -41,8 +41,18 @@ EAC_VARIANCE_THRESHOLD_MAJOR: float = 500_000      # £0.5m+ → needs explicit 
 
 SCHEDULE_VARIANCE_THRESHOLD_DAYS: int = 0          # Any slip → must be mentioned
 
-# ── Path to the EAC variance lookup file ──────────────────────────────────────
-import pathlib
-
-REPO_ROOT = pathlib.Path(__file__).parent.parent
-EAC_VARIANCE_FILE: pathlib.Path = REPO_ROOT / "NDA Data" / "lifecycle_eac_variance.xlsx"
+# ── Azure Blob Storage (EAC variance file) ─────────────────────────────────────
+# The EAC variance Excel is stored in Blob Storage so it can be updated via the
+# /api/ingest-eac endpoint without redeploying the function.
+AZURE_STORAGE_ACCOUNT_URL: str = os.environ.get(
+    "AZURE_STORAGE_ACCOUNT_URL",
+    "",
+)
+AZURE_STORAGE_CONTAINER_NAME: str = os.environ.get(
+    "AZURE_STORAGE_CONTAINER_NAME",
+    "nda-data",
+)
+EAC_BLOB_NAME: str = os.environ.get(
+    "EAC_BLOB_NAME",
+    "lifecycle_eac_variance.xlsx",
+)

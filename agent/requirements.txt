@@ -4,3 +4,4 @@ azure-identity
 pandas
 openpyxl
 azure-search-documents
+azure-storage-blob

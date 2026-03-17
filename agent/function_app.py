@@ -18,7 +18,7 @@ import logging
 
 import azure.functions as func
 
-from ingest_helper import ensure_index_exists, run_ingest
+from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file
 from agent_runner import validate_narrative
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,52 @@ def ingest_mppr(req: func.HttpRequest) -> func.HttpResponse:
         logger.exception("Ingestion pipeline failed.")
         return func.HttpResponse(
             json.dumps({"error": f"Ingestion failed: {exc}"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    return func.HttpResponse(
+        json.dumps(result),
+        status_code=200,
+        mimetype="application/json",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/ingest-eac
+# Body: multipart/form-data
+#   - file: the lifecycle_eac_variance.xlsx file
+# Uploads the file to Azure Blob Storage. tools.py detects the new ETag on the
+# next call and automatically refreshes its in-memory cache.
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="ingest-eac", methods=["POST"])
+def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
+    logger.info("ingest-eac triggered.")
+
+    file_data = req.files.get("file")
+    if not file_data:
+        return func.HttpResponse(
+            json.dumps({"error": "No file provided. Send the .xlsx file in the 'file' field."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        file_bytes = file_data.read()
+    except Exception as exc:
+        logger.exception("Failed to read uploaded EAC file.")
+        return func.HttpResponse(
+            json.dumps({"error": f"Failed to read file: {exc}"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        result = upload_eac_file(file_bytes)
+    except Exception as exc:
+        logger.exception("EAC file upload to blob storage failed.")
+        return func.HttpResponse(
+            json.dumps({"error": f"Upload failed: {exc}"}),
             status_code=500,
             mimetype="application/json",
         )

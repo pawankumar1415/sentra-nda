@@ -22,12 +22,16 @@ from azure.search.documents.indexes.models import (
     SearchableField,
     SimpleField,
 )
+from azure.storage.blob import BlobServiceClient
 
 logger = logging.getLogger(__name__)
 
-SEARCH_ENDPOINT   = os.environ["AZURE_SEARCH_ENDPOINT"]
-SEARCH_INDEX_NAME = os.environ.get("AZURE_SEARCH_INDEX_NAME", "nda-mppr-projects")
-SHEET_NAME        = os.environ.get("EXCEL_SHEET_NAME", "5a)NDA MPPR")
+SEARCH_ENDPOINT        = os.environ["AZURE_SEARCH_ENDPOINT"]
+SEARCH_INDEX_NAME      = os.environ.get("AZURE_SEARCH_INDEX_NAME", "nda-mppr-projects")
+SHEET_NAME             = os.environ.get("EXCEL_SHEET_NAME", "5a)NDA MPPR")
+STORAGE_ACCOUNT_URL    = os.environ.get("AZURE_STORAGE_ACCOUNT_URL", "")
+STORAGE_CONTAINER_NAME = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "nda-data")
+EAC_BLOB_NAME          = os.environ.get("EAC_BLOB_NAME", "lifecycle_eac_variance.xlsx")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -206,6 +210,44 @@ def _extract_projects(file_stream: io.BytesIO, reporting_period: str) -> list[di
             projects.append(doc)
 
     return projects
+
+
+def upload_eac_file(file_bytes: bytes) -> dict:
+    """
+    Upload the EAC variance Excel file to Azure Blob Storage.
+
+    The file is stored as a single blob (overwriting any previous version).
+    tools.py detects the new ETag on next call and automatically re-downloads
+    the refreshed data — no redeployment needed.
+    """
+    if not STORAGE_ACCOUNT_URL:
+        raise ValueError(
+            "AZURE_STORAGE_ACCOUNT_URL is not set. "
+            "Add it to local.settings.json (locally) or Function App Settings (Azure)."
+        )
+
+    blob_service = BlobServiceClient(
+        account_url=STORAGE_ACCOUNT_URL,
+        credential=_credential,
+    )
+    container_client = blob_service.get_container_client(STORAGE_CONTAINER_NAME)
+
+    # Create the container if it doesn't exist yet (idempotent)
+    try:
+        container_client.create_container()
+        logger.info("Created blob container '%s'.", STORAGE_CONTAINER_NAME)
+    except Exception:
+        pass  # Already exists — that's fine
+
+    blob_client = container_client.get_blob_client(EAC_BLOB_NAME)
+    blob_client.upload_blob(file_bytes, overwrite=True)
+    logger.info("EAC variance file uploaded to blob '%s/%s'.", STORAGE_CONTAINER_NAME, EAC_BLOB_NAME)
+
+    return {
+        "message": "EAC variance file uploaded successfully.",
+        "container": STORAGE_CONTAINER_NAME,
+        "blob": EAC_BLOB_NAME,
+    }
 
 
 def _push_to_search(documents: list[dict]) -> tuple[int, int]:
