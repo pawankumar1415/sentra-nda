@@ -23,7 +23,7 @@ import requests
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-BASE_URL    = "https://nda-foundry-api.azurewebsites.net/api"
+BASE_URL    = "https://nda-foundry-api-g3b0f6fjgzgjhbfx.uksouth-01.azurewebsites.net/api"
 TIMEOUT     = 120  # seconds — validation can take a while (LLM call)
 
 EAC_FILE    = pathlib.Path(__file__).parent / "NDA Data" / "lifecycle_eac_variance.xlsx"
