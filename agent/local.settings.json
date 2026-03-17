@@ -10,7 +10,7 @@
         "AZURE_SEARCH_INDEX_NAME": "nda-mppr-projects",
         "AZURE_SEARCH_ENDPOINT": "https://movar-nda-aisearch.search.windows.net",
         "USE_AI_SEARCH": "true",
-        "AZURE_STORAGE_ACCOUNT_URL": "https://<YOUR_STORAGE_ACCOUNT>.blob.core.windows.net",
+        "AZURE_STORAGE_ACCOUNT_URL": "https://ndadatastorage.blob.core.windows.net",
         "AZURE_STORAGE_CONTAINER_NAME": "nda-data",
         "EAC_BLOB_NAME": "lifecycle_eac_variance.xlsx"
     }
