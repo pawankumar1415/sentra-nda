@@ -22,9 +22,9 @@ Remote smoke tests only:
 All tests:
     python test_agent_memory.py
 
-Environment variables required for remote tests:
-    FUNCTION_APP_URL_AGENT   e.g. https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api
-    FUNCTION_KEY             Azure Function host key
+Environment variables are loaded automatically from agent/local.settings.json
+so you do NOT need to set them manually. Values already in the environment take
+precedence over the file (e.g. CI pipeline variables are never overwritten).
 """
 
 from __future__ import annotations
@@ -38,6 +38,26 @@ import uuid
 import unittest
 from unittest.mock import MagicMock, patch, call
 
+# ── Load local.settings.json ──────────────────────────────────────────────────
+# Reads agent/local.settings.json and injects its Values into os.environ so
+# FUNCTION_APP_URL_AGENT, FUNCTION_KEY, etc. are available without manual `set`
+# commands. Must happen before any import that calls os.environ.get() at load time.
+def _load_local_settings() -> None:
+    settings_path = os.path.join(os.path.dirname(__file__), "agent", "local.settings.json")
+    if not os.path.exists(settings_path):
+        return
+    with open(settings_path) as f:
+        data = json.load(f)
+    loaded = 0
+    for key, value in data.get("Values", {}).items():
+        if key not in os.environ:          # never overwrite real env vars
+            os.environ[key] = str(value)
+            loaded += 1
+    if loaded:
+        print(f"[test] Loaded {loaded} settings from agent/local.settings.json")
+
+_load_local_settings()
+
 # ── Path setup ────────────────────────────────────────────────────────────────
 AGENT_DIR = os.path.join(os.path.dirname(__file__), "agent")
 if AGENT_DIR not in sys.path:
@@ -49,7 +69,8 @@ if AGENT_DIR not in sys.path:
 
 def _remote_validate_url() -> str | None:
     base = os.environ.get("FUNCTION_APP_URL_AGENT", "").rstrip("/")
-    return f"{base}/validate" if base else None
+    # Return None if not set or still a placeholder value
+    return f"{base}/validate" if base and "<" not in base else None
 
 
 def _remote_headers() -> dict:

@@ -22,10 +22,14 @@ Remote smoke tests only (no DB needed):
 Skip remote tests:
     python test_conversation_memory.py --skip-remote
 
-Environment variables required for DB tests:
-    POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD (or Managed Identity)
+Environment variables are loaded automatically from rag_function/local.settings.json
+so you do NOT need to set them manually. Values already in the environment take
+precedence over the file (e.g. CI pipeline variables are never overwritten).
 
-Environment variables required for remote tests:
+To override a single value without editing the file:
+    set POSTGRES_HOST=myserver.postgres.database.azure.com && python test_conversation_memory.py
+
+Remote test variables (also loaded from local.settings.json if present there):
     FUNCTION_APP_URL   e.g. https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api
     FUNCTION_KEY       Azure Function host key
 """
@@ -42,6 +46,26 @@ import unittest
 from typing import Optional
 from unittest.mock import MagicMock, patch
 
+# ── Load local.settings.json ──────────────────────────────────────────────────
+# Reads rag_function/local.settings.json and injects its Values into os.environ
+# so POSTGRES_HOST, POSTGRES_DB, etc. are available without manual `set` commands.
+# Must happen before any import that calls os.environ.get() at module load time.
+def _load_local_settings() -> None:
+    settings_path = os.path.join(os.path.dirname(__file__), "rag_function", "local.settings.json")
+    if not os.path.exists(settings_path):
+        return
+    with open(settings_path) as f:
+        data = json.load(f)
+    loaded = 0
+    for key, value in data.get("Values", {}).items():
+        if key not in os.environ:          # never overwrite real env vars
+            os.environ[key] = str(value)
+            loaded += 1
+    if loaded:
+        print(f"[test] Loaded {loaded} settings from rag_function/local.settings.json")
+
+_load_local_settings()
+
 # ── Path setup ────────────────────────────────────────────────────────────────
 # Allow imports from rag_function/ when this script is run from the project root
 RAG_DIR = os.path.join(os.path.dirname(__file__), "rag_function")
@@ -53,18 +77,27 @@ if RAG_DIR not in sys.path:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _db_available() -> bool:
-    """Return True when POSTGRES_HOST is set (DB tests can run)."""
-    return bool(os.environ.get("POSTGRES_HOST"))
+    """
+    Return True only when POSTGRES_HOST is set to a real value.
+    Rejects placeholder strings like '<YOUR_SERVER>.postgres.database.azure.com'
+    that are still in local.settings.json — those would cause confusing
+    connection errors rather than a clean skip message.
+    """
+    host = os.environ.get("POSTGRES_HOST", "")
+    return bool(host) and "<" not in host
 
 
 def _remote_url() -> Optional[str]:
     base = os.environ.get("FUNCTION_APP_URL", "").rstrip("/")
-    return f"{base}/chat" if base else None
+    # Return None if not set or still a placeholder value
+    return f"{base}/chat" if base and "<" not in base else None
 
 
 def _remote_headers() -> dict:
     key = os.environ.get("FUNCTION_KEY", "")
-    return {"Content-Type": "application/json", **({"x-functions-key": key} if key else {})}
+    # Treat placeholder values as absent so remote tests skip cleanly
+    clean_key = key if key and "<" not in key else ""
+    return {"Content-Type": "application/json", **({"x-functions-key": clean_key} if clean_key else {})}
 
 
 # =============================================================================

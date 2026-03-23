@@ -16,6 +16,9 @@
 
         "MEMORY_STORE_NAME": "MemoryStore-polite_cart_fhy4z4tbvx",
         "AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
-        "MEMORY_UPDATE_DELAY_SECONDS": "0"
+        "MEMORY_UPDATE_DELAY_SECONDS": "0",
+
+        "FUNCTION_APP_URL_AGENT": "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api",
+        "FUNCTION_KEY": "<YOUR_FUNCTION_HOST_KEY>"
     }
 }
