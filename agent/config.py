@@ -75,7 +75,7 @@ EAC_BLOB_NAME: str = os.environ.get(
 
 MEMORY_STORE_NAME: str = os.environ.get(
     "MEMORY_STORE_NAME",
-    "nda-validation-memory",
+    "MemoryStore-polite_cart_fhy4z4tbvx",
 )
 
 # Embedding model deployment used by the Memory Store for semantic retrieval.
