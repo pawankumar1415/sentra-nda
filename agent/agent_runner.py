@@ -342,6 +342,7 @@ def validate_narrative(
     logger.info("Starting validation for: %s (conversation_id=%s)", project_name, conversation_id)
 
     # ── Resolve / create short-term conversation session ──────────────────────
+    conversation_api_error: str | None = None
     try:
         conversation_id, is_new = _resolve_conversation(
             openai_client, user_prompt, conversation_id
@@ -349,8 +350,10 @@ def validate_narrative(
     except Exception as exc:
         # Conversations API may be unavailable (permissions / region) — fall
         # back to a plain stateless call and log the failure.
+        conversation_api_error = f"{type(exc).__name__}: {exc}"
         logger.warning(
-            "Conversations API unavailable (%s) — running stateless validation", exc
+            "Conversations API unavailable (%s) — running stateless validation",
+            conversation_api_error,
         )
         conversation_id = None
         is_new          = True
@@ -372,11 +375,16 @@ def validate_narrative(
     if conversation_id:
         _store_assistant_reply(openai_client, conversation_id, result_text)
 
-    return {
+    response: dict = {
         "conversation_id":     conversation_id or "stateless",
         "is_new_conversation": is_new,
         "validation_result":   result_text,
     }
+    # Surface the conversation API error when falling back to stateless so
+    # callers can diagnose permission / SDK issues without needing log access.
+    if conversation_api_error:
+        response["conversation_api_error"] = conversation_api_error
+    return response
 
 
 # ─────────────────────────────────────────────────────────────────────────────

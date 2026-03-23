@@ -424,6 +424,8 @@ class TestRemoteValidateEndpoint(unittest.TestCase):
             "period":       "P07 2025-26",
         })
         cid = r1.get("conversation_id")
+        if r1.get("conversation_api_error"):
+            print(f"[REMOTE] Conversation API error: {r1['conversation_api_error']}")
         self.assertIsNotNone(cid, "First call did not return conversation_id")
 
         time.sleep(2)
