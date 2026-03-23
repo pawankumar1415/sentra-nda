@@ -138,9 +138,16 @@ class TestResolveConversation(unittest.TestCase):
         # Should have appended the user message to the existing conversation
         oc.conversations.items.create.assert_called_once()
         call_kwargs = oc.conversations.items.create.call_args
-        self.assertEqual(call_kwargs.kwargs.get("conversation_id") or
-                         call_kwargs.args[0] if call_kwargs.args else None,
-                         existing_id)
+        # Extract conversation_id from either keyword args (our case — called as
+        # conversations.items.create(conversation_id=..., items=[...]))
+        # or positional args (defensive fallback). Parentheses are required here:
+        # without them Python's operator precedence parses the ternary as the
+        # outer expression, making the whole thing None when args is empty.
+        actual_conv_id = (
+            call_kwargs.kwargs.get("conversation_id")
+            or (call_kwargs.args[0] if call_kwargs.args else None)
+        )
+        self.assertEqual(actual_conv_id, existing_id)
 
     def test_expired_id_falls_back_to_new_conversation(self):
         """If appending to an existing conversation raises, a new one is created."""
