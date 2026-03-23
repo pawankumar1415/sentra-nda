@@ -350,7 +350,11 @@ def validate_narrative(
         {"role": "user",      "content": user_prompt},
         {"role": "assistant", "content": result_text},
     ]
-    _save_conversation_history(conversation_id, updated_history)
+    try:
+        _save_conversation_history(conversation_id, updated_history)
+    except Exception as exc:
+        # Non-fatal — validation already completed; log and continue
+        logger.warning("Conversation history save failed: %s", exc)
 
     return {
         "conversation_id":     conversation_id,
