@@ -130,13 +130,32 @@ def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
 # POST /api/validate
 # Body: application/json
 #   {
-#     "project_name"  : "Dounreay Shaft and Silo",
-#     "narrative"     : "The SRO DCA remains Amber ...",
-#     "period"        : "P07 2025-26"
+#     "project_name"    : "Dounreay Shaft and Silo",       -- required
+#     "narrative"       : "The SRO DCA remains Amber ...", -- required
+#     "period"          : "P07 2025-26",                   -- optional
+#
+#     -- Conversation memory fields (both optional):
+#     "conversation_id" : "azure-conv-uuid",  -- null/absent = start new session
+#     "user_scope"      : "user-abc-123"      -- scopes Memory Store per user
+#   }
+#
+# Response:
+#   {
+#     "conversation_id"     : "azure-conv-uuid",  -- store client-side for follow-ups
+#     "is_new_conversation" : true,
+#     "validation_result"   : "..."
 #   }
 # ─────────────────────────────────────────────────────────────────────────────
 @app.route(route="validate", methods=["POST"])
 def validate(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Validate a narrative using the AI Foundry agent with conversation memory.
+
+    On the first call omit conversation_id (or pass null) — the server creates
+    a new conversation session and returns its ID.  On follow-up calls pass the
+    returned conversation_id to let the agent remember the original narrative
+    and any previous exchanges (e.g. "now fix just the EAC sentence").
+    """
     logger.info("validate triggered.")
 
     try:
@@ -148,9 +167,13 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    project_name   = body.get("project_name", "")
-    narrative_text = body.get("narrative", "")
-    period         = body.get("period", "")
+    project_name    = body.get("project_name", "")
+    narrative_text  = body.get("narrative", "")
+    period          = body.get("period", "")
+    # Short-term session memory — pass back the ID from a previous response
+    conversation_id = body.get("conversation_id") or None
+    # Long-term Memory Store scope — use a stable user/tenant identifier
+    user_scope      = body.get("user_scope") or None
 
     if not narrative_text:
         return func.HttpResponse(
@@ -164,6 +187,8 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
             project_name=project_name,
             narrative_text=narrative_text,
             period=period,
+            conversation_id=conversation_id,
+            user_scope=user_scope,
         )
     except Exception as exc:
         logger.exception("Agent validation failed.")
