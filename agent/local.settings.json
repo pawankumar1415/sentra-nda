@@ -12,6 +12,10 @@
         "USE_AI_SEARCH": "true",
         "AZURE_STORAGE_ACCOUNT_URL": "https://ndadatastorage.blob.core.windows.net",
         "AZURE_STORAGE_CONTAINER_NAME": "nda-data",
-        "EAC_BLOB_NAME": "lifecycle_eac_variance.xlsx"
+        "EAC_BLOB_NAME": "lifecycle_eac_variance.xlsx",
+
+        "MEMORY_STORE_NAME": "nda-validation-memory",
+        "AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT": "text-embedding-3-small",
+        "MEMORY_UPDATE_DELAY_SECONDS": "0"
     }
 }
