@@ -28,11 +28,47 @@ SDK version required: azure-ai-projects >= 2.0.0 (stable)
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 
 # Add the agent directory to path when run directly
 sys.path.insert(0, os.path.dirname(__file__))
+
+
+def _load_local_settings() -> None:
+    """
+    Load local.settings.json into os.environ so config.py picks up the real
+    values when this script is run directly with `python setup_memory.py`.
+
+    Azure Functions' `func start` does this automatically, but plain `python`
+    invocations do not — without this, config.py falls back to its placeholder
+    defaults and the script tries to connect to a non-existent host.
+
+    Only values not already present in the environment are set, so actual env
+    vars (e.g. from a CI pipeline) always take precedence over the file.
+    """
+    settings_path = os.path.join(os.path.dirname(__file__), "local.settings.json")
+    if not os.path.exists(settings_path):
+        print(f"[setup_memory] local.settings.json not found at {settings_path} — relying on env vars.")
+        return
+
+    with open(settings_path) as f:
+        data = json.load(f)
+
+    values = data.get("Values", {})
+    loaded = []
+    for key, value in values.items():
+        if key not in os.environ:
+            os.environ[key] = str(value)
+            loaded.append(key)
+
+    if loaded:
+        print(f"[setup_memory] Loaded {len(loaded)} settings from local.settings.json")
+
+
+# Load settings BEFORE importing config.py so os.environ.get() calls resolve correctly
+_load_local_settings()
 
 from azure.ai.projects import AIProjectClient
 from azure.ai.projects.models import (
