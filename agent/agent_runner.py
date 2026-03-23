@@ -1,17 +1,16 @@
 """
-agent/agent_runner.py — SDK 2.0.0 Compatible Version with Conversation Memory.
+agent/agent_runner.py — Blob-Storage Conversation Memory + Azure AI Foundry Agent.
 
 Conversation memory is implemented at two complementary levels:
 
-  SHORT-TERM (within a session) — Azure Conversations API
-  ────────────────────────────────────────────────────────
-  Each call to validate_narrative() can receive a `conversation_id` from the
-  client.  On the first call (no ID supplied) a new Conversations object is
-  created via openai_client.conversations.create(), and its ID is returned to
-  the client.  On follow-up calls the client passes the same ID; the server
-  adds the new user message to the existing conversation and calls the Responses
-  API with `conversation=conversation_id` — Azure reconstructs the full history
-  automatically without re-sending every message.
+  SHORT-TERM (within a session) — Azure Blob Storage
+  ────────────────────────────────────────────────────
+  Each call to validate_narrative() can receive a `conversation_id` (a UUID we
+  generate) from the client.  On the first call (no ID supplied) a fresh UUID is
+  created and the conversation history blob is initialised.  On follow-up calls
+  the client returns the same UUID; the server loads the message history from
+  blob storage and injects it into the Responses API `input` so the agent has
+  full context of prior turns — no Azure Conversations API permissions required.
 
   LONG-TERM (across sessions) — Azure AI Foundry Memory Store (Preview)
   ────────────────────────────────────────────────────────────────────────
@@ -19,23 +18,19 @@ Conversation memory is implemented at two complementary levels:
   Foundry portal → Memory → Add).  After each session Azure extracts key facts
   (projects validated, recurring issues, user preferences) and stores them in
   the Memory Store.  On every subsequent call those memories are automatically
-  retrieved and injected into the agent context — the agent "remembers" past
-  interactions without being explicitly told.
-
-  The `user_scope` parameter scopes memory to a specific user/tenant so
-  different users don't share memories.
+  retrieved and injected into the agent context via the `agent_reference`
+  extra_body field.  The `user_scope` parameter scopes memory to a specific
+  user/tenant so different users don't share memories.
 
 Architecture
 ────────────
-Primary path  : Responses API + Conversations (requires Azure AI Developer role)
-Fallback path : Chat Completions (stateless; used if Responses API fails)
+Primary path  : Responses API (history injected via `input` list)
+Fallback path : Chat Completions (history injected via messages list)
 
-When the fallback path runs, short-term context is reconstructed by loading
-conversation items from the Conversations object and converting them to a
-messages list — so even the fallback path has memory, just managed slightly
-differently.
-
-SDK version required: azure-ai-projects >= 2.0.0 (stable, released March 2026)
+Conversation blobs are stored in Azure Blob Storage under:
+    <AZURE_STORAGE_CONTAINER_NAME>/conversations/<uuid>.json
+with the schema:
+    {"messages": [{"role": "user"|"assistant", "content": "..."}]}
 """
 
 from __future__ import annotations
@@ -43,11 +38,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 import inspect
 from typing import Callable, List, Optional, Tuple
 
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
+from azure.storage.blob import BlobServiceClient
 
 import azure.ai.projects.models as models
 
@@ -58,6 +55,8 @@ from config import (
     AZURE_SEARCH_INDEX_NAME,
     MEMORY_STORE_NAME,
     MEMORY_UPDATE_DELAY_SECONDS,
+    AZURE_STORAGE_ACCOUNT_URL,
+    AZURE_STORAGE_CONTAINER_NAME,
 )
 from system_prompt import get_system_prompt
 from tools import AGENT_TOOLS
@@ -65,6 +64,10 @@ from tools import AGENT_TOOLS
 logger = logging.getLogger(__name__)
 
 AGENT_NAME = "nda-narrative-validator-v3"
+
+# Blob prefix used for all conversation history files.
+# Stored alongside EAC data in the same container but under a separate prefix.
+CONVERSATION_BLOB_PREFIX = "conversations/"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +95,24 @@ def _get_project_client() -> AIProjectClient:
 
     return AIProjectClient(
         endpoint=PROJECT_ENDPOINT,
+        credential=credential,
+    )
+
+
+def _get_blob_service_client() -> BlobServiceClient:
+    """Build a BlobServiceClient using the same credential chain as the AI client."""
+    credential = DefaultAzureCredential()
+    tenant_id     = os.environ.get("AZURE_TENANT_ID", "")
+    client_id     = os.environ.get("AZURE_CLIENT_ID", "")
+    client_secret = os.environ.get("AZURE_CLIENT_SECRET", "")
+    if tenant_id and client_id and client_secret:
+        credential = ClientSecretCredential(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+    return BlobServiceClient(
+        account_url=AZURE_STORAGE_ACCOUNT_URL,
         credential=credential,
     )
 
@@ -174,118 +195,84 @@ def _dispatch_tool(fn_name: str, fn_args: dict) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Conversation Management (short-term session memory)
+# Conversation History Management (Azure Blob Storage)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _resolve_conversation(
-    openai_client,
-    user_prompt: str,
-    conversation_id: Optional[str],
-) -> Tuple[str, bool]:
+def _load_conversation_history(conv_id: str) -> Optional[List[dict]]:
     """
-    Get or create a Conversations API session and add the user's message to it.
+    Load conversation history from Azure Blob Storage.
 
-    If `conversation_id` is provided the user message is appended to the
-    existing conversation.  Otherwise a new Conversations object is created
-    with the user message as the first item.
-
-    Returns:
-        (conversation_id, is_new) — the UUID string and a bool indicating
-        whether a new conversation was created.
-    """
-    user_item = {
-        "type":    "message",
-        "role":    "user",
-        "content": user_prompt,
-    }
-
-    if conversation_id:
-        # Resume existing conversation — append user turn
-        try:
-            openai_client.conversations.items.create(
-                conversation_id=conversation_id,
-                items=[user_item],
-            )
-            logger.info("Resumed conversation %s", conversation_id)
-            return conversation_id, False
-        except Exception as exc:
-            # Conversation may have expired or been deleted — start fresh
-            logger.warning(
-                "Could not resume conversation %s (%s) — creating new one",
-                conversation_id, exc,
-            )
-
-    # Create a new conversation with the user message as the seed item
-    conv            = openai_client.conversations.create(items=[user_item])
-    conversation_id = conv.id
-    logger.info("Created new conversation %s", conversation_id)
-    return conversation_id, True
-
-
-def _store_assistant_reply(
-    openai_client,
-    conversation_id: str,
-    reply_text: str,
-) -> None:
-    """
-    Write the assistant's reply back into the Conversations object so future
-    turns have access to it.
-
-    This is necessary because the Responses API does not automatically write
-    the assistant turn back when we use the tool-call loop (we pass
-    previous_response_id, not conversation=, during the tool loop to avoid
-    double-writing intermediate steps).
+    Returns a list of {"role", "content"} dicts in chronological order,
+    or None if the blob does not exist or cannot be read.
     """
     try:
-        openai_client.conversations.items.create(
-            conversation_id=conversation_id,
-            items=[{
-                "type":    "message",
-                "role":    "assistant",
-                "content": reply_text,
-            }],
+        blob_client = _get_blob_service_client()
+        blob = blob_client.get_blob_client(
+            container=AZURE_STORAGE_CONTAINER_NAME,
+            blob=f"{CONVERSATION_BLOB_PREFIX}{conv_id}.json",
+        )
+        raw = blob.download_blob().readall()
+        data = json.loads(raw)
+        return data.get("messages", [])
+    except Exception as exc:
+        logger.debug("Could not load conversation %s from blob: %s", conv_id, exc)
+        return None
+
+
+def _save_conversation_history(conv_id: str, messages: List[dict]) -> None:
+    """
+    Save/overwrite conversation history in Azure Blob Storage.
+
+    Non-fatal: if the write fails the validation result is still returned;
+    subsequent calls simply cannot resume the conversation.
+    """
+    try:
+        blob_client = _get_blob_service_client()
+        blob = blob_client.get_blob_client(
+            container=AZURE_STORAGE_CONTAINER_NAME,
+            blob=f"{CONVERSATION_BLOB_PREFIX}{conv_id}.json",
+        )
+        blob.upload_blob(
+            json.dumps({"messages": messages}, ensure_ascii=False),
+            overwrite=True,
+        )
+        logger.info(
+            "Saved conversation %s (%d messages) to blob", conv_id, len(messages)
         )
     except Exception as exc:
-        # Non-fatal — the reply is already returned to the user; this is just
-        # for future context retrieval.
-        logger.warning("Could not store assistant reply in conversation: %s", exc)
+        logger.warning("Could not save conversation %s to blob: %s", conv_id, exc)
 
 
-def _conversation_to_messages(openai_client, conversation_id: str) -> List[dict]:
+def _resolve_conversation(
+    conv_id: Optional[str],
+    user_prompt: str,
+) -> Tuple[str, bool, List[dict]]:
     """
-    Load conversation items and convert them to a Chat Completions messages list.
+    Load or create a conversation session using Azure Blob Storage.
 
-    Used by the fallback Chat Completions path so it has the same conversation
-    history as the Responses API primary path.
+    If `conv_id` is provided and the corresponding blob exists, the prior history
+    is returned.  If the blob is missing (expired / random ID) a new UUID is
+    created instead.
 
-    Returns a list of {"role": ..., "content": ...} dicts in chronological order,
-    filtered to user/assistant roles only (tool calls are not passed to Chat
-    Completions as history — they are re-executed fresh if needed).
+    Returns:
+        (conversation_id, is_new, prior_history)
+        prior_history — list of {"role", "content"} dicts for all turns BEFORE
+        the current user message.  The caller appends the current user prompt.
     """
-    try:
-        items = list(openai_client.conversations.items.list(conversation_id))
-    except Exception as exc:
-        logger.warning("Could not load conversation items for %s: %s", conversation_id, exc)
-        return []
+    if conv_id:
+        history = _load_conversation_history(conv_id)
+        if history is not None:
+            logger.info(
+                "Resumed conversation %s (%d prior messages)", conv_id, len(history)
+            )
+            return conv_id, False, history
+        logger.warning(
+            "Conversation %s not found in blob storage — starting new session", conv_id
+        )
 
-    messages = []
-    for item in items:
-        role    = getattr(item, "role", None)
-        content = getattr(item, "content", None)
-        if role in ("user", "assistant") and content:
-            # content may be a string or a list of content blocks
-            if isinstance(content, str):
-                messages.append({"role": role, "content": content})
-            elif isinstance(content, list):
-                # Extract text from content block list
-                text = " ".join(
-                    getattr(block, "text", "") or ""
-                    for block in content
-                    if getattr(block, "type", "") in ("text", "output_text")
-                )
-                if text:
-                    messages.append({"role": role, "content": text})
-    return messages
+    new_id = str(uuid.uuid4())
+    logger.info("Created new conversation %s", new_id)
+    return new_id, True, []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -303,7 +290,7 @@ def validate_narrative(
     Validate a project narrative using the Azure AI Foundry agent with
     two-level conversation memory.
 
-    SHORT-TERM MEMORY (Conversations API):
+    SHORT-TERM MEMORY (Blob Storage):
         Pass `conversation_id` from a previous response to continue a session.
         The agent will remember the original narrative, validation result, and
         any follow-up exchanges within the same conversation.
@@ -318,11 +305,8 @@ def validate_narrative(
         narrative_text:  The narrative text to validate (or a follow-up question
                          in a continuing conversation).
         period:          Reporting period string, e.g. "P07 2025-26".
-        conversation_id: Azure Conversations API UUID from a previous response.
-                         Pass None to start a new conversation session.
+        conversation_id: UUID from a previous response.  Pass None to start new.
         user_scope:      String used to partition the Memory Store per user.
-                         If None the default shared scope is used — not
-                         recommended in multi-user production deployments.
 
     Returns:
         Dict with keys:
@@ -339,52 +323,40 @@ def validate_narrative(
         f"{narrative_text}"
     )
 
-    logger.info("Starting validation for: %s (conversation_id=%s)", project_name, conversation_id)
+    logger.info(
+        "Starting validation for: %s (conversation_id=%s)", project_name, conversation_id
+    )
 
-    # ── Resolve / create short-term conversation session ──────────────────────
-    conversation_api_error: str | None = None
-    try:
-        conversation_id, is_new = _resolve_conversation(
-            openai_client, user_prompt, conversation_id
-        )
-    except Exception as exc:
-        # Conversations API may be unavailable (permissions / region) — fall
-        # back to a plain stateless call and log the failure.
-        conversation_api_error = f"{type(exc).__name__}: {exc}"
-        logger.warning(
-            "Conversations API unavailable (%s) — running stateless validation",
-            conversation_api_error,
-        )
-        conversation_id = None
-        is_new          = True
+    # ── Resolve / create short-term conversation session (Blob Storage) ────────
+    conversation_id, is_new, prior_history = _resolve_conversation(
+        conversation_id, user_prompt
+    )
 
     # ── Run validation (primary: Responses API; fallback: Chat Completions) ──
     try:
         result_text = _run_with_responses_api(
-            openai_client, user_prompt, conversation_id, user_scope
+            openai_client, user_prompt, prior_history, user_scope
         )
     except Exception as e:
         logger.warning(
             "Responses API failed (%s) — falling back to Chat Completions", e
         )
         result_text = _run_with_chat_completions_with_history(
-            openai_client, user_prompt, conversation_id
+            openai_client, user_prompt, prior_history
         )
 
-    # ── Store the assistant reply back in the Conversations object ────────────
-    if conversation_id:
-        _store_assistant_reply(openai_client, conversation_id, result_text)
+    # ── Persist the updated conversation history ───────────────────────────────
+    updated_history = prior_history + [
+        {"role": "user",      "content": user_prompt},
+        {"role": "assistant", "content": result_text},
+    ]
+    _save_conversation_history(conversation_id, updated_history)
 
-    response: dict = {
-        "conversation_id":     conversation_id or "stateless",
+    return {
+        "conversation_id":     conversation_id,
         "is_new_conversation": is_new,
         "validation_result":   result_text,
     }
-    # Surface the conversation API error when falling back to stateless so
-    # callers can diagnose permission / SDK issues without needing log access.
-    if conversation_api_error:
-        response["conversation_api_error"] = conversation_api_error
-    return response
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -394,20 +366,19 @@ def validate_narrative(
 def _run_with_responses_api(
     openai_client,
     user_prompt: str,
-    conversation_id: Optional[str],
+    prior_history: List[dict],
     user_scope: Optional[str],
 ) -> str:
     """
     Primary execution path using the OpenAI Responses API.
 
-    Uses `conversation=conversation_id` so Azure automatically reconstructs
-    the full conversation history from the Conversations object — we do not
-    resend old messages.
+    Injects `prior_history` as earlier input items so the agent has full context
+    of the conversation without relying on the Azure Conversations API (which
+    requires elevated Foundry project permissions).
 
     The agent has a MemorySearchPreviewTool attached in the Foundry portal;
-    long-term memories are automatically injected into the agent context via
-    the `agent_reference` extra_body field.  `user_scope` scopes the memory
-    retrieval to a specific user.
+    long-term memories are automatically injected via `agent_reference`.
+    `user_scope` scopes the memory retrieval to a specific user.
     """
     openai_tools = _build_responses_api_tools()
 
@@ -418,34 +389,26 @@ def _run_with_responses_api(
             "type": "agent_reference",
         },
     }
-    # If a user scope is provided, pass it so the Memory Store retrieves only
-    # memories for this user rather than the shared default scope.
     if user_scope:
         extra_body["memory_scope"] = user_scope
 
-    # Build the initial Responses API call.
-    # If we have a conversation_id we use `conversation=` (history is on Azure's side).
-    # Otherwise fall back to `input=` (stateless single call).
-    create_kwargs: dict = {
-        "model":       MODEL_DEPLOYMENT_NAME,
-        "instructions": get_system_prompt(),
-        "tools":       openai_tools,
-        "extra_body":  extra_body,
-    }
-    if conversation_id:
-        # The Conversations object already contains the user message we appended
-        # in _resolve_conversation; just reference the conversation and Azure will
-        # pick up all items including the latest user turn.
-        create_kwargs["conversation"] = conversation_id
-    else:
-        # No conversation context — pass the user prompt directly
-        create_kwargs["input"] = user_prompt
+    # Build `input` as prior history + current user message.
+    # Each item follows the Responses API input item format.
+    input_items: list = [
+        {"type": "message", "role": msg["role"], "content": msg["content"]}
+        for msg in prior_history
+    ]
+    input_items.append({"type": "message", "role": "user", "content": user_prompt})
 
-    response = openai_client.responses.create(**create_kwargs)
+    response = openai_client.responses.create(
+        model=MODEL_DEPLOYMENT_NAME,
+        instructions=get_system_prompt(),
+        tools=openai_tools,
+        input=input_items,
+        extra_body=extra_body,
+    )
 
     # ── Tool-call loop ────────────────────────────────────────────────────────
-    # The Responses API may ask us to execute tool functions (check_eac_variance,
-    # etc.) and provide their results before generating the final answer.
     max_iterations = 10
     for iteration in range(max_iterations):
         tool_calls = [
@@ -469,10 +432,6 @@ def _run_with_responses_api(
                 "output":  output,
             })
 
-        # Continue the Responses API loop with tool outputs.
-        # Use previous_response_id (not conversation=) for the tool-return turns
-        # to avoid double-writing intermediate assistant turns into the
-        # Conversations object — we write only the final answer in validate_narrative().
         response = openai_client.responses.create(
             model=MODEL_DEPLOYMENT_NAME,
             instructions=get_system_prompt(),
@@ -500,38 +459,25 @@ def _run_with_responses_api(
 def _run_with_chat_completions_with_history(
     openai_client,
     user_prompt: str,
-    conversation_id: Optional[str],
+    prior_history: List[dict],
 ) -> str:
     """
     Fallback execution path using the Chat Completions API.
 
-    Reconstructs conversation history from the Conversations object so this
-    path also has short-term memory even without the Responses API.
-    Long-term Memory Store injection is NOT available in this path — it requires
-    the Responses API + agent_reference.
+    Builds a messages list from prior_history so this path also has short-term
+    memory.  Long-term Memory Store injection is NOT available in this path —
+    it requires the Responses API + agent_reference.
 
     Args:
-        openai_client:   OpenAI client from get_openai_client().
-        user_prompt:     The current user message.
-        conversation_id: Optional Conversations API UUID to load history from.
+        openai_client:  OpenAI client from get_openai_client().
+        user_prompt:    The current user message.
+        prior_history:  List of {"role", "content"} dicts for previous turns.
     """
     openai_tools = _build_chat_completions_tools()
 
     # ── Build messages list ───────────────────────────────────────────────────
     messages: list[dict] = [{"role": "system", "content": get_system_prompt()}]
-
-    # If we have a conversation ID, load prior turns from the Conversations object
-    # so the fallback path benefits from the same short-term memory.
-    if conversation_id:
-        prior_messages = _conversation_to_messages(openai_client, conversation_id)
-        # prior_messages already includes the user turn we just appended,
-        # so we include all but the last item (we'll add the current user message below)
-        if prior_messages and prior_messages[-1].get("role") == "user":
-            messages.extend(prior_messages[:-1])  # exclude the duplicate user turn
-        else:
-            messages.extend(prior_messages)
-
-    # Add the current user question
+    messages.extend(prior_history)
     messages.append({"role": "user", "content": user_prompt})
 
     # ── Tool-call loop ────────────────────────────────────────────────────────

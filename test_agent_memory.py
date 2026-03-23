@@ -80,26 +80,16 @@ def _remote_headers() -> dict:
 
 def _make_openai_client_mock(
     response_text: str = "Validation passed.",
-    conv_id: str = "mock-conv-001",
 ) -> MagicMock:
     """
     Build a MagicMock that mimics the OpenAI client returned by
     project_client.get_openai_client().
 
     Covers:
-      - conversations.create()          → returns obj with .id = conv_id
-      - conversations.items.create()    → no-op mock
-      - responses.create()              → returns a response with text output
+      - responses.create() → returns a response with text output
+    Note: conversations.* calls are no longer made — conversation history is
+    managed via Azure Blob Storage, not the Azure Conversations API.
     """
-    # conversations.create()
-    mock_conv        = MagicMock()
-    mock_conv.id     = conv_id
-    mock_conversations               = MagicMock()
-    mock_conversations.create.return_value = mock_conv
-    mock_conversations.items         = MagicMock()
-    mock_conversations.items.create  = MagicMock()
-    mock_conversations.items.list    = MagicMock(return_value=[])
-
     # responses.create() — returns an output list with a single message item
     mock_content_block       = MagicMock()
     mock_content_block.type  = "output_text"
@@ -113,9 +103,8 @@ def _make_openai_client_mock(
     mock_responses           = MagicMock()
     mock_responses.create.return_value = mock_response
 
-    mock_client              = MagicMock()
-    mock_client.conversations = mock_conversations
-    mock_client.responses    = mock_responses
+    mock_client           = MagicMock()
+    mock_client.responses = mock_responses
     return mock_client
 
 
@@ -131,85 +120,95 @@ def _make_project_client_mock(openai_client_mock: MagicMock) -> MagicMock:
 # =============================================================================
 
 class TestResolveConversation(unittest.TestCase):
-    """Tests for agent_runner._resolve_conversation()."""
+    """
+    Tests for agent_runner._resolve_conversation().
 
-    def _call(self, openai_client, user_prompt, conversation_id):
+    Conversation history is now stored in Azure Blob Storage.
+    _load_conversation_history() is patched so tests run without real Azure
+    credentials.
+    """
+
+    def _call(self, conv_id, user_prompt, *, load_return=None):
+        """Helper: calls _resolve_conversation with _load_conversation_history mocked."""
         from agent_runner import _resolve_conversation
-        return _resolve_conversation(openai_client, user_prompt, conversation_id)
+        with patch("agent_runner._load_conversation_history", return_value=load_return):
+            return _resolve_conversation(conv_id, user_prompt)
 
     def test_no_id_creates_new_conversation(self):
-        """When conversation_id is None a new Conversations object must be created."""
-        oc = _make_openai_client_mock(conv_id="new-conv-123")
-        conv_id, is_new = self._call(oc, "Validate this narrative", None)
+        """When conversation_id is None a new UUID must be returned with empty history."""
+        conv_id, is_new, history = self._call(None, "Validate this narrative")
 
-        self.assertEqual(conv_id, "new-conv-123")
+        self.assertIsNotNone(conv_id)
         self.assertTrue(is_new)
-        oc.conversations.create.assert_called_once()
+        self.assertEqual(history, [])
+        # UUID format: 8-4-4-4-12
+        self.assertEqual(len(conv_id.split("-")), 5, "Expected UUID format")
 
-    def test_existing_id_appends_user_message(self):
-        """When conversation_id is provided the user message is appended, not a new conv."""
-        oc = _make_openai_client_mock()
-        existing_id = "existing-conv-456"
-        conv_id, is_new = self._call(oc, "Follow-up question", existing_id)
+    def test_existing_id_loads_history(self):
+        """When conversation_id is provided and blob exists, history is returned."""
+        existing_id   = "existing-conv-456"
+        prior_history = [
+            {"role": "user",      "content": "First question"},
+            {"role": "assistant", "content": "First answer"},
+        ]
+        conv_id, is_new, history = self._call(
+            existing_id, "Follow-up question", load_return=prior_history
+        )
 
         self.assertEqual(conv_id, existing_id)
         self.assertFalse(is_new)
-        # Should NOT have created a new conversation
-        oc.conversations.create.assert_not_called()
-        # Should have appended the user message to the existing conversation
-        oc.conversations.items.create.assert_called_once()
-        call_kwargs = oc.conversations.items.create.call_args
-        # Extract conversation_id from either keyword args (our case — called as
-        # conversations.items.create(conversation_id=..., items=[...]))
-        # or positional args (defensive fallback). Parentheses are required here:
-        # without them Python's operator precedence parses the ternary as the
-        # outer expression, making the whole thing None when args is empty.
-        actual_conv_id = (
-            call_kwargs.kwargs.get("conversation_id")
-            or (call_kwargs.args[0] if call_kwargs.args else None)
+        self.assertEqual(history, prior_history)
+
+    def test_missing_id_falls_back_to_new_conversation(self):
+        """If the blob for an existing ID is not found, a new conversation is created."""
+        # load_return=None simulates the blob not being found
+        conv_id, is_new, history = self._call(
+            "stale-conv-id", "New question", load_return=None
         )
-        self.assertEqual(actual_conv_id, existing_id)
-
-    def test_expired_id_falls_back_to_new_conversation(self):
-        """If appending to an existing conversation raises, a new one is created."""
-        oc = _make_openai_client_mock(conv_id="fallback-conv-789")
-        # Simulate the conversations.items.create raising (e.g. conv expired)
-        oc.conversations.items.create.side_effect = Exception("Conversation not found")
-
-        conv_id, is_new = self._call(oc, "New question", "stale-conv-id")
 
         self.assertTrue(is_new)
-        # Must have fallen back to conversations.create()
-        oc.conversations.create.assert_called_once()
+        self.assertEqual(history, [])
+        # A new UUID must be generated (not the stale one)
+        self.assertNotEqual(conv_id, "stale-conv-id")
 
 
 # =============================================================================
-# Unit tests — _store_assistant_reply()
+# Unit tests — _save_conversation_history()
 # =============================================================================
 
-class TestStoreAssistantReply(unittest.TestCase):
-    """Tests for agent_runner._store_assistant_reply()."""
+class TestSaveConversationHistory(unittest.TestCase):
+    """Tests for agent_runner._save_conversation_history()."""
 
-    def test_stores_reply_as_assistant_message(self):
-        """The assistant reply must be written back to the Conversations object."""
-        from agent_runner import _store_assistant_reply
-        oc = _make_openai_client_mock()
-        _store_assistant_reply(oc, "conv-001", "Validation passed.")
+    def test_saves_messages_to_blob(self):
+        """Messages must be serialised and uploaded to the correct blob path."""
+        from agent_runner import _save_conversation_history, CONVERSATION_BLOB_PREFIX
 
-        oc.conversations.items.create.assert_called_once()
-        _, kwargs = oc.conversations.items.create.call_args
-        items = kwargs.get("items", [])
-        self.assertEqual(len(items), 1)
-        self.assertEqual(items[0]["role"], "assistant")
-        self.assertEqual(items[0]["content"], "Validation passed.")
+        mock_blob   = MagicMock()
+        mock_client = MagicMock()
+        mock_client.get_blob_client.return_value = mock_blob
 
-    def test_does_not_raise_on_api_failure(self):
-        """A failure writing the reply back must not propagate (non-fatal)."""
-        from agent_runner import _store_assistant_reply
-        oc = _make_openai_client_mock()
-        oc.conversations.items.create.side_effect = Exception("Network error")
+        messages = [
+            {"role": "user",      "content": "Validate this."},
+            {"role": "assistant", "content": "Validation passed."},
+        ]
+
+        with patch("agent_runner._get_blob_service_client", return_value=mock_client):
+            _save_conversation_history("test-conv-001", messages)
+
+        mock_blob.upload_blob.assert_called_once()
+        uploaded_data = json.loads(mock_blob.upload_blob.call_args.args[0])
+        self.assertEqual(uploaded_data["messages"], messages)
+
+    def test_does_not_raise_on_blob_failure(self):
+        """A blob write failure must not propagate — the validation result already returned."""
+        from agent_runner import _save_conversation_history
+
+        mock_client = MagicMock()
+        mock_client.get_blob_client.side_effect = Exception("Blob error")
+
         # Should complete without raising
-        _store_assistant_reply(oc, "conv-001", "Some answer")
+        with patch("agent_runner._get_blob_service_client", return_value=mock_client):
+            _save_conversation_history("test-conv-002", [])
 
 
 # =============================================================================
@@ -229,33 +228,51 @@ class TestValidateNarrative(unittest.TestCase):
         narrative: str = "The SRO DCA remains Amber due to schedule pressures.",
         period: str = "P07 2025-26",
         conversation_id: str | None = None,
+        prior_history: list | None = None,
         user_scope: str | None = None,
     ) -> dict:
+        """
+        Run validate_narrative() with all Azure SDK calls mocked.
+        - _get_project_client is mocked to return openai_mock via project mock.
+        - _load_conversation_history returns prior_history (None = new session).
+        - _save_conversation_history is a no-op mock.
+        """
         project_mock = _make_project_client_mock(openai_mock)
         with patch("agent_runner._get_project_client", return_value=project_mock), \
-             patch("agent_runner.get_system_prompt", return_value="System prompt."):
+             patch("agent_runner.get_system_prompt", return_value="System prompt."), \
+             patch("agent_runner._load_conversation_history", return_value=prior_history), \
+             patch("agent_runner._save_conversation_history") as mock_save:
             from agent_runner import validate_narrative
-            return validate_narrative(
+            result = validate_narrative(
                 project_name=project_name,
                 narrative_text=narrative,
                 period=period,
                 conversation_id=conversation_id,
                 user_scope=user_scope,
             )
+            result["_mock_save"] = mock_save  # expose for assertions
+            return result
 
     def test_returns_conversation_id_on_first_call(self):
-        """First call (no conversation_id) must return a conversation_id."""
-        oc     = _make_openai_client_mock(conv_id="first-conv-id")
+        """First call (no conversation_id) must return a UUID conversation_id."""
+        oc     = _make_openai_client_mock()
         result = self._run_validate(oc)
 
         self.assertIn("conversation_id", result)
-        self.assertEqual(result["conversation_id"], "first-conv-id")
+        cid = result["conversation_id"]
+        # Must be a UUID string (8-4-4-4-12 format), not "stateless"
+        self.assertNotEqual(cid, "stateless")
+        self.assertEqual(len(cid.split("-")), 5, f"Expected UUID, got: {cid}")
         self.assertTrue(result["is_new_conversation"])
 
     def test_returns_same_conversation_id_on_follow_up(self):
-        """Passing conversation_id must return the same ID with is_new_conversation=False."""
-        oc     = _make_openai_client_mock()
-        result = self._run_validate(oc, conversation_id="existing-conv-id")
+        """Passing conversation_id with found history must return same ID, is_new=False."""
+        oc      = _make_openai_client_mock()
+        history = [{"role": "user", "content": "Prior question"},
+                   {"role": "assistant", "content": "Prior answer"}]
+        result  = self._run_validate(
+            oc, conversation_id="existing-conv-id", prior_history=history
+        )
 
         self.assertEqual(result["conversation_id"], "existing-conv-id")
         self.assertFalse(result["is_new_conversation"])
@@ -268,21 +285,17 @@ class TestValidateNarrative(unittest.TestCase):
         self.assertIn("validation_result", result)
         self.assertIn("Layer 1: PASS", result["validation_result"])
 
-    def test_assistant_reply_written_back_to_conversation(self):
-        """After getting the answer the assistant turn must be written to Conversations."""
-        oc = _make_openai_client_mock(response_text="Good narrative.", conv_id="write-back-conv")
-        self._run_validate(oc)
+    def test_history_saved_after_validation(self):
+        """After validation, _save_conversation_history must be called with user+assistant turns."""
+        oc     = _make_openai_client_mock(response_text="Good narrative.")
+        result = self._run_validate(oc)
 
-        # conversations.items.create must have been called twice:
-        # once by _resolve_conversation (user message) and once by
-        # _store_assistant_reply (assistant message)
-        calls = oc.conversations.items.create.call_args_list
-        roles = []
-        for c in calls:
-            items = c.kwargs.get("items") or (c.args[1] if len(c.args) > 1 else [])
-            for item in items:
-                roles.append(item.get("role"))
-        self.assertIn("assistant", roles, "Expected assistant message written back to conversation")
+        mock_save = result["_mock_save"]
+        mock_save.assert_called_once()
+        saved_messages = mock_save.call_args.args[1]  # second positional arg is messages
+        roles = [m["role"] for m in saved_messages]
+        self.assertIn("user",      roles, "Expected user turn saved")
+        self.assertIn("assistant", roles, "Expected assistant turn saved")
 
     def test_fallback_to_chat_completions_on_responses_api_failure(self):
         """If the Responses API raises, the Chat Completions fallback must be used."""
@@ -305,17 +318,30 @@ class TestValidateNarrative(unittest.TestCase):
         self.assertIn("validation_result", result)
         self.assertIn("Fallback result.", result["validation_result"])
 
-    def test_conversations_api_failure_degrades_gracefully(self):
-        """If the Conversations API is completely unavailable, result must still return."""
-        oc = _make_openai_client_mock()
-        oc.conversations.create.side_effect = Exception("Conversations API error")
+    def test_blob_failure_degrades_gracefully(self):
+        """
+        If blob storage save fails the validation result must still be returned.
+        _save_conversation_history is non-fatal, so the response must always contain
+        a valid conversation_id and validation_result.
+        """
+        oc = _make_openai_client_mock(response_text="Validation completed.")
 
-        # The validate function should catch this and run stateless
-        # The response still has validation_result (may say stateless)
-        result = self._run_validate(oc)
+        project_mock = _make_project_client_mock(oc)
+        with patch("agent_runner._get_project_client", return_value=project_mock), \
+             patch("agent_runner.get_system_prompt", return_value="System prompt."), \
+             patch("agent_runner._load_conversation_history", return_value=None), \
+             patch("agent_runner._save_conversation_history",
+                   side_effect=Exception("Blob unavailable")):
+            from agent_runner import validate_narrative
+            result = validate_narrative(
+                project_name="BEPPS2",
+                narrative_text="Narrative text here.",
+                period="P07 2025-26",
+            )
+
         self.assertIn("validation_result", result)
-        # conversation_id will be "stateless" when the Conversations API is unavailable
-        self.assertIn(result["conversation_id"], ["stateless", None])
+        self.assertIn("validation_result", result)
+        self.assertIsNotNone(result.get("conversation_id"))
 
 
 # =============================================================================
@@ -479,7 +505,7 @@ if __name__ == "__main__":
         suite  = unittest.TestSuite()
         for cls in [
             TestResolveConversation,
-            TestStoreAssistantReply,
+            TestSaveConversationHistory,
             TestValidateNarrative,
             TestToolBuilders,
         ]:
