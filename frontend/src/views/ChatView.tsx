@@ -1,24 +1,35 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, User, Bot, Loader2, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { sendChatMessage } from '../services/api';
 import type { ChatMessage as ApiChatMessage } from '../services/api';
 
+// localStorage key where the active session UUID is persisted across page refreshes
+const SESSION_STORAGE_KEY = 'nda_chat_session_id';
+
+const WELCOME_MESSAGE = "Hello! I am the NDA Portfolio RAG Assistant. I have access to the latest NDA MPPR and EAC reference data. How can I help you analyze the portfolio today?";
+
 interface ChatMessage extends ApiChatMessage {
     id: string;
 }
 
+const initialMessages = (): ChatMessage[] => [
+    { id: '1', role: 'assistant', content: WELCOME_MESSAGE },
+];
+
 const ChatView = () => {
-    const [messages, setMessages] = useState<ChatMessage[]>([
-        {
-            id: '1',
-            role: 'assistant',
-            content: "Hello! I am the NDA Portfolio RAG Assistant. I have access to the latest NDA MPPR and EAC reference data. How can I help you analyze the portfolio today?"
-        }
-    ]);
-    const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [messages, setMessages]     = useState<ChatMessage[]>(initialMessages);
+    const [input, setInput]           = useState('');
+    const [isLoading, setIsLoading]   = useState(false);
+
+    // Session ID is the single piece of state the frontend needs to persist.
+    // On mount we read from localStorage so conversations survive page refreshes.
+    // On first server response we write the server-assigned UUID back to localStorage.
+    const [sessionId, setSessionId] = useState<string | null>(
+        () => localStorage.getItem(SESSION_STORAGE_KEY)
+    );
+
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
@@ -29,32 +40,45 @@ const ChatView = () => {
         scrollToBottom();
     }, [messages, isLoading]);
 
+    /**
+     * Reset the conversation: clear visible messages, wipe the stored session ID,
+     * and let the next message create a fresh server-side session.
+     */
+    const handleNewConversation = useCallback(() => {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        setSessionId(null);
+        setMessages(initialMessages());
+        setInput('');
+    }, []);
+
     const handleSend = async () => {
         if (!input.trim() || isLoading) return;
 
         const userMsg: ChatMessage = {
             id: Date.now().toString(),
             role: 'user',
-            content: input.trim()
+            content: input.trim(),
         };
 
-        const newMessages = [...messages, userMsg];
-        setMessages(newMessages);
+        setMessages(prev => [...prev, userMsg]);
         setInput('');
         setIsLoading(true);
 
         try {
-            // Send history excluding the new user message (we send it separate, or send all)
-            // The API expects: { question: string, history: ChatMessage[] }
-            // Let's send the previous history up to the user message
-            const historyToSent = messages.map(m => ({ role: m.role, content: m.content }));
+            // Pass the server session ID (null on the very first message).
+            // The server will create a new session and return its UUID if null.
+            const response = await sendChatMessage(userMsg.content, sessionId);
 
-            const response = await sendChatMessage(userMsg.content, historyToSent);
+            // Persist the server-assigned session ID for subsequent messages
+            if (response.session_id && response.session_id !== sessionId) {
+                localStorage.setItem(SESSION_STORAGE_KEY, response.session_id);
+                setSessionId(response.session_id);
+            }
 
             const assistantMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: response.answer
+                content: response.answer,
             };
             setMessages(prev => [...prev, assistantMsg]);
 
@@ -62,7 +86,7 @@ const ChatView = () => {
             const errorMsg: ChatMessage = {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: `**Error connecting to RAG Agent:** ${error.message}`
+                content: `**Error connecting to RAG Agent:** ${error.message}`,
             };
             setMessages(prev => [...prev, errorMsg]);
         } finally {
@@ -79,6 +103,42 @@ const ChatView = () => {
 
     return (
         <div className="chat-view" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+            {/* Header bar — shows active session indicator + New Conversation button */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '10px 20px',
+                borderBottom: '1px solid var(--border-color)',
+                background: 'var(--bg-primary)',
+                flexShrink: 0,
+            }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    {sessionId
+                        ? `Session: ${sessionId.slice(0, 8)}…`
+                        : 'No active session'}
+                </span>
+                <button
+                    onClick={handleNewConversation}
+                    title="Clear history and start a new conversation"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '6px 12px',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.8rem',
+                        cursor: 'pointer',
+                    }}
+                >
+                    <RotateCcw size={13} />
+                    New Conversation
+                </button>
+            </div>
 
             {/* Messages Area */}
             <div className="messages-container" style={{ flex: 1, overflowY: 'auto', padding: '40px 20px' }}>

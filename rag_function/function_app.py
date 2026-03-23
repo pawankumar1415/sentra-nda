@@ -213,16 +213,39 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
     """
     POST /api/chat
 
+    Conversational RAG endpoint with server-side session memory.
+
     Request body (JSON):
     {
-        "question": "What is the portfolio health?",
+        "question":   "What is the portfolio health?",     -- required
+        "session_id": "550e8400-e29b-41d4-a716-446655440000"  -- optional UUID
+
+        -- Legacy fallback (ignored when session_id is valid):
         "history": [
-            {"role": "user", "content": "hello"},
+            {"role": "user",      "content": "hello"},
             {"role": "assistant", "content": "hi"}
         ]
     }
 
-    Returns JSON with the markdown-formatted 'answer'.
+    Response body (JSON):
+    {
+        "answer":     "In P07, the portfolio shows ...",   -- markdown string
+        "session_id": "550e8400-e29b-41d4-a716-446655440000",  -- store in localStorage
+        "meta": {
+            "intent":            "portfolio_summary",
+            "projects_detected": [],
+            "context_length":    1243,
+            "is_new_session":    true
+        }
+    }
+
+    Session lifecycle:
+      - First call: omit session_id (or send null) → server creates a new session
+        and returns session_id in the response.
+      - Subsequent calls: send the returned session_id → server loads history from
+        PostgreSQL and continues the conversation.
+      - New conversation: send session_id=null again (or a fresh UUID the server
+        won't recognise) → server creates a new session.
     """
     logger.info("POST /api/chat — request received")
 
@@ -235,8 +258,10 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
 
-    question = body.get("question", "").strip()
-    history = body.get("history", [])
+    question   = body.get("question", "").strip()
+    session_id = body.get("session_id") or None   # treat empty string as None
+    # Legacy history array — used only when session_id is absent/invalid
+    history    = body.get("history", [])
 
     if not question:
         return func.HttpResponse(
@@ -246,7 +271,11 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     try:
-        result = run_chat(question=question, history=history)
+        result = run_chat(
+            question=question,
+            session_id=session_id,
+            history=history,
+        )
         return func.HttpResponse(
             json.dumps(result, indent=2),
             status_code=200,

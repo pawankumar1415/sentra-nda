@@ -105,6 +105,7 @@ _EMBEDDING_DIMS = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
 _SCHEMA_SQL = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- ── NDA project narratives (vector store) ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nda_projects (
     project_id              TEXT PRIMARY KEY,
     project_name            TEXT,
@@ -121,6 +122,7 @@ CREATE TABLE IF NOT EXISTS nda_projects (
     indexed_at              TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── EAC variance lookup table ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nda_eac_variance (
     project_name            TEXT PRIMARY KEY,
     period_short_name       TEXT,
@@ -131,6 +133,40 @@ CREATE TABLE IF NOT EXISTS nda_eac_variance (
     updated_at              TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── Conversation memory: sessions ─────────────────────────────────────────────
+-- Each row represents one chat session (one browser tab / one user conversation).
+-- session_id is a UUID generated server-side and returned to the client on the
+-- first message; the client stores it in localStorage and sends it on subsequent
+-- calls so the server can reload history without the client tracking messages.
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Optional free-form metadata (e.g. user-agent, originating project name)
+    metadata    JSONB       NOT NULL DEFAULT '{{}}'
+);
+
+-- ── Conversation memory: messages ─────────────────────────────────────────────
+-- Stores every user/assistant exchange. The full history is kept permanently
+-- for audit purposes; only the last N messages are loaded for each LLM call
+-- (controlled by MAX_HISTORY_MESSAGES in conversation.py).
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id          BIGSERIAL   PRIMARY KEY,
+    session_id  UUID        NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+    role        TEXT        NOT NULL CHECK (role IN ('user', 'assistant')),
+    content     TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Stores per-message metadata such as detected intent and projects list
+    -- so we can replay/audit exactly what context the LLM received
+    metadata    JSONB       NOT NULL DEFAULT '{{}}'
+);
+
+-- Index on (session_id, id) so loading history for a session is a single
+-- efficient index scan ordered by insertion sequence.
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+    ON chat_messages(session_id, id ASC);
+
+-- ── pgvector IVFFlat index on project embeddings ──────────────────────────────
 CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
     ON nda_projects
     USING ivfflat ((embedding::halfvec({_EMBEDDING_DIMS})) halfvec_cosine_ops)

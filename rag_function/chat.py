@@ -1,17 +1,36 @@
 """
-rag_function/chat.py — Conversational RAG pipeline.
+rag_function/chat.py — Conversational RAG pipeline with persistent session memory.
 
 Answers free-form questions about the NDA portfolio using intent detection
-and vector search on the Indexed PostgreSQL data.
+and vector search on the indexed PostgreSQL data.
+
+Memory behaviour
+────────────────
+Each chat session is identified by a `session_id` UUID.  On the first call the
+server creates a new session and returns the ID to the client; the client stores
+it in localStorage and sends it back on every subsequent message.  This means:
+
+  - History survives page refreshes — the server always loads from PostgreSQL.
+  - The client never needs to track or send the full message history itself.
+  - Multiple browser tabs can share the same session or use independent ones.
+
+The last MAX_HISTORY_MESSAGES messages (default 20) are injected into the LLM
+prompt on each call.  Full history is retained in the DB for audit purposes.
+
+Backward compatibility
+──────────────────────
+If a caller passes `history=[...]` without a `session_id` (e.g. the old frontend
+or a test), the provided history is used for that call but nothing is persisted.
 """
 
 import json
 import logging
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 
 from db import DBConnection
 from embedder import embed
 from validate import _get_gpt_client, _chat_deployment
+from conversation import create_session, load_history, save_turn, session_exists
 
 logger = logging.getLogger(__name__)
 
@@ -134,60 +153,125 @@ def _vector_search(question: str, project_names: List[str], top_k: int = 5) -> s
     return context
 
 
-def run_chat(question: str, history: List[Dict[str, str]]) -> Dict:
+def run_chat(
+    question: str,
+    session_id: Optional[str] = None,
+    history: Optional[List[Dict[str, str]]] = None,
+) -> Dict:
     """
-    Main entry point for /api/chat.
-    1. Detect intent.
-    2. Gather context from DB.
-    3. Generate response with GPT.
-    """
-    # 1. Detect Intent
-    intent_data = _detect_intent(question)
-    intent = intent_data["intent"]
-    projects = intent_data["project_names"]
-    
-    logger.info(f"Chat request - Intent: {intent}, Projects: {projects}")
+    Main entry point for POST /api/chat.
 
-    # 2. Gather Context based on intent
-    context = ""
+    Conversation memory flow:
+      1. Resolve session — create a new one or validate the supplied ID.
+      2. Load history from PostgreSQL (most recent MAX_HISTORY_MESSAGES messages).
+      3. Detect intent from the user's question.
+      4. Gather RAG context from the database based on intent.
+      5. Build the LLM message list (system + history + augmented user message).
+      6. Call GPT and get the answer.
+      7. Persist the user/assistant exchange back to PostgreSQL.
+      8. Return answer + session_id so the client can store the ID.
+
+    Args:
+        question:   The user's question for this turn.
+        session_id: UUID string of an existing session.  If None or invalid,
+                    a new session is created automatically.
+        history:    Legacy fallback — a list of {"role", "content"} dicts sent
+                    by the client.  Used only when no valid session_id is given
+                    (backward-compatible with old frontend versions).
+
+    Returns:
+        Dict with keys:
+            "answer"     — markdown-formatted LLM response
+            "session_id" — UUID string the client should persist (may be new)
+            "meta"       — intent, projects_detected, context_length, is_new_session
+    """
+    # ── 1. Resolve session ────────────────────────────────────────────────────
+    is_new_session = False
+
+    if session_id and session_exists(session_id):
+        # Existing session — load history from PostgreSQL
+        logger.info("Resuming chat session %s", session_id)
+        effective_history = load_history(session_id)
+    else:
+        if session_id:
+            # Client sent an ID that doesn't exist — log a warning and start fresh
+            # (handles stale IDs from cleared DB or re-deployments)
+            logger.warning(
+                "session_id %s not found in DB — creating new session", session_id
+            )
+        # Create a fresh session
+        session_id = create_session(metadata={"source": "chat_view"})
+        is_new_session = True
+        logger.info("Created new chat session %s", session_id)
+
+        # Fall back to client-supplied history if given (legacy path)
+        effective_history = [
+            {"role": m.get("role", "user"), "content": m.get("content", "")}
+            for m in (history or [])
+            if m.get("role") in ("user", "assistant")
+        ]
+
+    # ── 2. Detect intent ──────────────────────────────────────────────────────
+    intent_data = _detect_intent(question)
+    intent      = intent_data["intent"]
+    projects    = intent_data["project_names"]
+
+    logger.info("Chat request — intent: %s, projects: %s, session: %s", intent, projects, session_id)
+
+    # ── 3. Gather RAG context from the database ───────────────────────────────
     if intent == "portfolio_summary":
         context = _get_portfolio_summary()
     elif intent == "eac_query":
+        # Combine financial data + relevant narrative snippets
         context = _get_eac_data(projects) + "\n\n" + _vector_search(question, projects, top_k=2)
     elif intent == "general":
         context = "No specific NDA project context needed for general questions."
     else:
-        # Default: project_query
+        # Default: project_query — pure vector search
         context = _vector_search(question, projects, top_k=5)
 
-    # 3. Build message history (keep last 5 interactions to save tokens)
+    # ── 4. Build LLM message list ─────────────────────────────────────────────
+    # Order: system prompt → conversation history → current user question (with context)
     messages = [{"role": "system", "content": _ANSWER_PROMPT}]
-    
-    # Add history
-    for msg in history[-10:]:
-        # only accept 'user' or 'assistant' roles
-        role = msg.get("role", "user")
-        if role in ["user", "assistant"]:
-            messages.append({"role": role, "content": msg.get("content", "")})
 
-    # Add current question + hidden context
+    # Inject conversation history — already ordered oldest-to-newest by load_history()
+    messages.extend(effective_history)
+
+    # Augment the current question with hidden RAG context.
+    # The context is hidden from the chat UI but visible to the LLM so the
+    # assistant can ground its answer in real data without cluttering the display.
     augmented_user_message = f"CONTEXT DATA:\n{context}\n\nUSER QUESTION:\n{question}"
     messages.append({"role": "user", "content": augmented_user_message})
 
-    # 4. Generate Answer
-    gpt = _get_gpt_client()
+    # ── 5. Generate answer ────────────────────────────────────────────────────
+    gpt  = _get_gpt_client()
     resp = gpt.chat.completions.create(
         model=_chat_deployment(),
-        messages=messages
+        messages=messages,
     )
-
     answer = resp.choices[0].message.content
 
-    return {
-        "answer": answer,
-        "meta": {
-            "intent": intent,
+    # ── 6. Persist the exchange ───────────────────────────────────────────────
+    # Save the raw user question (NOT the augmented version with context) so
+    # the stored history reads naturally for humans and future LLM turns.
+    save_turn(
+        session_id=session_id,
+        user_message=question,
+        assistant_message=answer,
+        metadata={
+            "intent":            intent,
             "projects_detected": projects,
-            "context_length": len(context)
-        }
+            "context_length":    len(context),
+        },
+    )
+
+    return {
+        "answer":     answer,
+        "session_id": session_id,
+        "meta": {
+            "intent":            intent,
+            "projects_detected": projects,
+            "context_length":    len(context),
+            "is_new_session":    is_new_session,
+        },
     }

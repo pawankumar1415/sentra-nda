@@ -69,7 +69,47 @@ export interface ChatMessage {
     content: string;
 }
 
-export const sendChatMessage = async (question: string, history: ChatMessage[]) => {
+/**
+ * Metadata returned by the server with each chat response.
+ * Useful for debugging and displaying intent detection results.
+ */
+export interface ChatMeta {
+    intent: string;
+    projects_detected: string[];
+    context_length: number;
+    /** True when the server created a brand-new session for this call */
+    is_new_session: boolean;
+}
+
+/**
+ * Full response shape from POST /api/chat.
+ */
+export interface ChatResponse {
+    answer: string;
+    /**
+     * Server-assigned session UUID.  Persist this in localStorage and send it
+     * back on every subsequent message to maintain conversation continuity.
+     * When null the server will always create a new session.
+     */
+    session_id: string;
+    meta: ChatMeta;
+}
+
+/**
+ * Send a chat message to the RAG agent.
+ *
+ * @param question   The user's question for this turn.
+ * @param sessionId  UUID from a previous response (stored in localStorage).
+ *                   Pass null on the very first message or when starting a
+ *                   new conversation — the server will create a fresh session.
+ * @param history    Legacy fallback: full history array sent by the client.
+ *                   Only used when sessionId is null/missing (old behaviour).
+ */
+export const sendChatMessage = async (
+    question: string,
+    sessionId: string | null,
+    history: ChatMessage[] = [],
+): Promise<ChatResponse> => {
     const url = `${API_BASE_URL}/chat${getAuthParams()}`;
 
     const response = await fetch(url, {
@@ -79,7 +119,8 @@ export const sendChatMessage = async (question: string, history: ChatMessage[]) 
         },
         body: JSON.stringify({
             question,
-            history
+            session_id: sessionId,   // null on first message → server creates session
+            history,                 // ignored by server when session_id is valid
         }),
     });
 
@@ -88,7 +129,7 @@ export const sendChatMessage = async (question: string, history: ChatMessage[]) 
         throw new Error(`API Error (${response.status}): ${errorText}`);
     }
 
-    return response.json();
+    return response.json() as Promise<ChatResponse>;
 };
 
 export interface ProjectInfo {
