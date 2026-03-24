@@ -21,6 +21,7 @@ import azure.functions as func
 from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file, search_projects
 from agent_runner import validate_narrative
 from batch_validate import run_agent_batch_validate
+from chat import run_chat
 
 logger = logging.getLogger(__name__)
 
@@ -307,3 +308,50 @@ def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
         status_code=200,
         mimetype="application/json",
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/chat
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="chat", methods=["POST"])
+def chat(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/chat — Conversational chat for the Foundry approach.
+    Uses Azure AI Search for context, Blob Storage for session memory.
+    Same request/response shape as the custom approach.
+    """
+    logger.info("POST /api/chat (agent) — request received")
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "Request body must be valid JSON"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    question   = (body.get("question") or "").strip()
+    session_id = body.get("session_id") or None
+
+    if not question:
+        return func.HttpResponse(
+            json.dumps({"error": "'question' field is required"}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        result = run_chat(question=question, session_id=session_id)
+        return func.HttpResponse(
+            json.dumps(result, indent=2),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        logger.exception("Agent chat pipeline failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
