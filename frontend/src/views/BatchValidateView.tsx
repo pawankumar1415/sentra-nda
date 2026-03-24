@@ -55,21 +55,16 @@ const BatchValidateView = () => {
 
                 try {
                     const validationResult = await validateNarrative({
-                        narrative: proj.narrative_text,
+                        narrative:    proj.narrative_text,
                         project_name: proj.project_name,
-                        period: listData.period || ''
+                        period:       listData.period || '',
                     });
-
-                    const resultWithMeta = {
-                        ...validationResult,
-                        project_name: proj.project_name
-                    };
-                    currentResults.push(resultWithMeta);
+                    currentResults.push({ ...validationResult, project_name: proj.project_name });
                 } catch (err: any) {
                     currentResults.push({
-                        project_name: proj.project_name,
+                        project_name:    proj.project_name,
                         overall_verdict: 'ERROR',
-                        message: err.message || 'Validation failed'
+                        message:         err.message || 'Validation failed',
                     });
                 }
 
@@ -325,8 +320,9 @@ const BatchValidateView = () => {
                                         </thead>
                                         <tbody>
                                             {results.map((res: any, idx: number) => {
-                                                const vColor = getVerdictColor(res.overall_verdict);
-                                                const isExpanded = expandedRow === res.project_name;
+                                                const displayVerdict = res.overall_verdict;
+                                                const vColor      = getVerdictColor(displayVerdict);
+                                                const isExpanded  = expandedRow === res.project_name;
                                                 const totalIssues = (res.layer1?.issues?.length || 0) + (res.layer2?.issues?.length || 0);
 
                                                 return (
@@ -348,18 +344,14 @@ const BatchValidateView = () => {
                                                             </td>
                                                             <td style={{ padding: '12px' }}>
                                                                 <div style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    gap: '6px',
-                                                                    padding: '4px 8px',
-                                                                    borderRadius: '4px',
-                                                                    background: getVerdictBg(res.overall_verdict),
+                                                                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                                                                    padding: '4px 8px', borderRadius: '4px',
+                                                                    background: getVerdictBg(displayVerdict),
                                                                     color: vColor,
-                                                                    fontWeight: 'bold',
-                                                                    fontSize: '0.85rem'
+                                                                    fontWeight: 'bold', fontSize: '0.85rem'
                                                                 }}>
-                                                                    {getVerdictIcon(res.overall_verdict)}
-                                                                    {res.overall_verdict}
+                                                                    {getVerdictIcon(displayVerdict)}
+                                                                    {displayVerdict}
                                                                 </div>
                                                             </td>
                                                             <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
@@ -430,6 +422,7 @@ const BatchValidateView = () => {
                                                                 </td>
                                                             </tr>
                                                         )}
+
                                                     </React.Fragment>
                                                 );
                                             })}

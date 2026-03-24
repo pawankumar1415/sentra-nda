@@ -174,6 +174,45 @@ CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
 """
 
 
+def search_projects(query: str, limit: int = 20) -> list:
+    """
+    Search indexed project names in nda_projects using a case-insensitive
+    ILIKE pattern match.  Returns the most recently indexed narrative for
+    each matching project so the caller can pre-populate the validate form.
+
+    Args:
+        query:  Partial project name to search for (ILIKE '%query%').
+        limit:  Maximum number of distinct projects to return.
+
+    Returns:
+        List of dicts: [{project_name, period_short_name, narrative_text}]
+    """
+    # DISTINCT ON (project_name) with ORDER BY indexed_at DESC gives us the
+    # most recent narrative for each matching project in one efficient query.
+    sql = """
+        SELECT DISTINCT ON (project_name)
+               project_name,
+               period_short_name,
+               narrative_text
+        FROM   nda_projects
+        WHERE  project_name ILIKE %s
+        ORDER  BY project_name, indexed_at DESC
+        LIMIT  %s
+    """
+    pattern = f"%{query}%"
+    results = []
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (pattern, limit))
+            for row in cur.fetchall():
+                results.append({
+                    "project_name":     row[0],
+                    "period_short_name": row[1] or "",
+                    "narrative_text":   row[2] or "",
+                })
+    return results
+
+
 def ensure_schema() -> None:
     """Create pgvector extension, table, and index if not present. Idempotent."""
     try:

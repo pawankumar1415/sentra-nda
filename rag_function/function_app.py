@@ -15,7 +15,7 @@ import logging
 
 import azure.functions as func
 
-from db import ensure_schema
+from db import ensure_schema, search_projects
 from ingest import run_ingest, list_projects_from_bytes
 from ingest_eac import run_ingest_eac
 from validate import run_validate
@@ -337,7 +337,49 @@ def list_projects(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
-# ── Route 6: Batch Validate ───────────────────────────────────────────────────
+# ── Route 6: Search Projects ─────────────────────────────────────────────────
+@app.route(route="search-projects", methods=["GET"])
+def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    GET /api/search-projects?q=<term>&limit=20
+
+    Full-text search across indexed project names in PGVector.
+    Returns projects whose names match the query string (case-insensitive).
+    Each result includes the most recently indexed narrative so the user can
+    pre-populate the validate form without uploading an Excel file first.
+
+    Query params:
+        q      — search term (2+ characters recommended)
+        limit  — max results, default 20
+    """
+    logger.info("GET /api/search-projects — request received")
+
+    query = req.params.get("q", "").strip()
+    if not query:
+        return func.HttpResponse(
+            json.dumps({"projects": []}),
+            status_code=200,
+            mimetype="application/json",
+        )
+
+    try:
+        limit   = min(int(req.params.get("limit", 20)), 50)
+        results = search_projects(query, limit=limit)
+        return func.HttpResponse(
+            json.dumps({"projects": results}),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        logger.exception("search-projects failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+# ── Route 7: Batch Validate ───────────────────────────────────────────────────
 @app.route(route="batch-validate", methods=["POST"])
 def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
     """

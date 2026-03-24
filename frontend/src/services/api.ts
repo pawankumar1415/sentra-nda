@@ -1,11 +1,20 @@
 // @ts-ignore
 import localSettings from '../local.settings.json';
 
+// RAG function app (custom Python + PostgreSQL)
 export const API_BASE_URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api";
 export const AZURE_FUNCTION_KEY = localSettings.AZURE_FUNCTION_KEY || '';
 
+// Agent function app (Azure AI Foundry)
+export const AGENT_API_BASE_URL = "https://nda-foundry-api-g3b0f6fjgzgjhbfx.uksouth-01.azurewebsites.net/api";
+export const AZURE_AGENT_FUNCTION_KEY = localSettings.AZURE_AGENT_FUNCTION_KEY || AZURE_FUNCTION_KEY;
+
 export const getAuthParams = () => {
     return AZURE_FUNCTION_KEY ? `?code=${encodeURIComponent(AZURE_FUNCTION_KEY)}` : '';
+};
+
+export const getAgentAuthParams = () => {
+    return AZURE_AGENT_FUNCTION_KEY ? `?code=${encodeURIComponent(AZURE_AGENT_FUNCTION_KEY)}` : '';
 };
 
 export interface ValidateRequest {
@@ -160,6 +169,87 @@ export const listProjects = async (file: File): Promise<ListProjectsResponse> =>
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`API Error (${response.status}): ${errorText}`);
+    }
+
+    return response.json();
+};
+
+export interface SearchedProject {
+    project_name: string;
+    period_short_name: string;
+    narrative_text: string;
+}
+
+/**
+ * Search indexed projects in the PGVector database by name.
+ * Returns projects whose names contain the query string (case-insensitive).
+ * Lets the user populate the validate form without uploading an Excel file first.
+ */
+export const searchProjects = async (query: string, limit = 20): Promise<SearchedProject[]> => {
+    if (!query || query.length < 2) return [];
+    const params = new URLSearchParams();
+    if (AZURE_FUNCTION_KEY) params.append('code', AZURE_FUNCTION_KEY);
+    params.append('q', query);
+    params.append('limit', String(limit));
+
+    const url = `${API_BASE_URL}/search-projects?${params.toString()}`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.projects || [];
+};
+
+/**
+ * Search indexed projects in Azure AI Search (agent backend) by name.
+ * Used by ValidateView when in Agent/Foundry mode.
+ */
+export const searchProjectsAgent = async (query: string, limit = 20): Promise<SearchedProject[]> => {
+    if (!query || query.length < 2) return [];
+    const params = new URLSearchParams();
+    if (AZURE_AGENT_FUNCTION_KEY) params.append('code', AZURE_AGENT_FUNCTION_KEY);
+    params.append('q', query);
+    params.append('limit', String(limit));
+
+    const url = `${AGENT_API_BASE_URL}/search-projects?${params.toString()}`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return data.projects || [];
+};
+
+export interface AgentValidateRequest {
+    narrative: string;
+    project_name: string;
+    period: string;
+    conversation_id?: string | null;
+}
+
+export interface AgentValidateResponse {
+    conversation_id: string;
+    is_new_conversation: boolean;
+    validation_result: string;
+}
+
+/**
+ * Validate a single narrative using the Azure AI Foundry agent.
+ */
+export const validateNarrativeAgent = async (data: AgentValidateRequest): Promise<AgentValidateResponse> => {
+    const url = `${AGENT_API_BASE_URL}/validate${getAgentAuthParams()}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            narrative:       data.narrative,
+            project_name:    data.project_name,
+            period:          data.period,
+            conversation_id: data.conversation_id || null,
+        }),
+    });
+
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Agent API Error (${response.status}): ${errorText}`);
     }
 
     return response.json();

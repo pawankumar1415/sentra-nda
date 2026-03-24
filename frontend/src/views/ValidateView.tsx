@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud } from 'lucide-react';
-import { validateNarrative, listProjects, type ProjectInfo } from '../services/api';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud, Search } from 'lucide-react';
+import { validateNarrative, listProjects, searchProjects, type ProjectInfo, type SearchedProject } from '../services/api';
 import { diffWords } from 'diff';
 
 const ValidateView = () => {
@@ -18,6 +18,53 @@ const ValidateView = () => {
     const [uploadLoading, setUploadLoading] = useState(false);
     const [toastMessage, setToastMessage] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // ── Wild search state ──────────────────────────────────────────────────
+    const [searchResults, setSearchResults] = useState<SearchedProject[]>([]);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+    const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Debounced search: fires 350 ms after the user stops typing
+    const handleProjectNameChange = useCallback((value: string) => {
+        setProjectName(value);
+        setShowSearchDropdown(false);
+
+        // Only search when no Excel file is loaded and query is long enough
+        if (uploadedFile || !isManualEntry || value.length < 2) {
+            setSearchResults([]);
+            return;
+        }
+
+        if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+        searchDebounceRef.current = setTimeout(async () => {
+            setSearchLoading(true);
+            try {
+                const results = await searchProjects(value);
+                setSearchResults(results);
+                setShowSearchDropdown(results.length > 0);
+            } catch {
+                setSearchResults([]);
+            } finally {
+                setSearchLoading(false);
+            }
+        }, 350);
+    }, [uploadedFile, isManualEntry]);
+
+    const handleSelectSearchResult = (project: SearchedProject) => {
+        setProjectName(project.project_name);
+        setPeriod(project.period_short_name || period);
+        setNarrative(project.narrative_text || '');
+        setSearchResults([]);
+        setShowSearchDropdown(false);
+    };
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const close = () => setShowSearchDropdown(false);
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, []);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
@@ -72,11 +119,7 @@ const ValidateView = () => {
         setError('');
 
         try {
-            const response = await validateNarrative({
-                narrative,
-                project_name: projectName,
-                period
-            });
+            const response = await validateNarrative({ narrative, project_name: projectName, period });
             setResult(response);
         } catch (err: any) {
             setError(err.message || 'An error occurred during validation');
@@ -209,21 +252,67 @@ const ValidateView = () => {
                                             </select>
                                         </div>
                                     ) : (
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <input
-                                                type="text"
-                                                className="form-control"
-                                                value={projectName}
-                                                onChange={(e) => setProjectName(e.target.value)}
-                                            />
-                                            {projectsList.length > 0 && (
-                                                <button type="button" onClick={() => {
-                                                    setIsManualEntry(false);
-                                                    setProjectName(projectsList[0].project_name);
-                                                    setNarrative(projectsList[0].narrative_text || '');
-                                                }} className="btn btn-outline" style={{ padding: '0 12px', whiteSpace: 'nowrap' }}>
-                                                    Back to List
-                                                </button>
+                                        <div style={{ position: 'relative' }}>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <div style={{ position: 'relative', flex: 1 }}>
+                                                    <input
+                                                        type="text"
+                                                        className="form-control"
+                                                        value={projectName}
+                                                        onChange={(e) => handleProjectNameChange(e.target.value)}
+                                                        onFocus={() => searchResults.length > 0 && setShowSearchDropdown(true)}
+                                                        placeholder="Type to search indexed projects..."
+                                                        style={{ paddingRight: '32px' }}
+                                                    />
+                                                    {searchLoading ? (
+                                                        <Loader2 size={14} className="spin" style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+                                                    ) : (
+                                                        <Search size={14} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', pointerEvents: 'none' }} />
+                                                    )}
+                                                </div>
+                                                {projectsList.length > 0 && (
+                                                    <button type="button" onClick={() => {
+                                                        setIsManualEntry(false);
+                                                        setProjectName(projectsList[0].project_name);
+                                                        setNarrative(projectsList[0].narrative_text || '');
+                                                    }} className="btn btn-outline" style={{ padding: '0 12px', whiteSpace: 'nowrap' }}>
+                                                        Back to List
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {/* Search results dropdown */}
+                                            {showSearchDropdown && searchResults.length > 0 && (
+                                                <div
+                                                    onMouseDown={(e) => e.stopPropagation()}
+                                                    style={{
+                                                        position: 'absolute', top: '100%', left: 0, right: 0,
+                                                        zIndex: 100, background: 'var(--bg-primary)',
+                                                        border: '1px solid var(--border-color)', borderRadius: '8px',
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                                                        maxHeight: '220px', overflowY: 'auto', marginTop: '4px'
+                                                    }}
+                                                >
+                                                    {searchResults.map((proj, idx) => (
+                                                        <div
+                                                            key={idx}
+                                                            onClick={() => handleSelectSearchResult(proj)}
+                                                            style={{
+                                                                padding: '10px 14px', cursor: 'pointer',
+                                                                borderBottom: idx < searchResults.length - 1 ? '1px solid var(--border-color)' : 'none',
+                                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                                                            }}
+                                                            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-secondary)')}
+                                                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                                                        >
+                                                            <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{proj.project_name}</span>
+                                                            {proj.period_short_name && (
+                                                                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                                                                    {proj.period_short_name}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             )}
                                         </div>
                                     )}
