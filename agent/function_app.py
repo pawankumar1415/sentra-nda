@@ -18,8 +18,9 @@ import logging
 
 import azure.functions as func
 
-from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file
+from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file, search_projects
 from agent_runner import validate_narrative
+from batch_validate import run_agent_batch_validate
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,44 @@ def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /api/search-projects?q=<term>&limit=20
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="search-projects", methods=["GET"])
+def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    GET /api/search-projects?q=<term>&limit=20
+
+    Wildcard search across indexed project names in Azure AI Search.
+    Returns projects whose names start with / contain the query term.
+    Each result includes the most recently indexed narrative so the user can
+    pre-populate the validate form without uploading an Excel file first.
+    """
+    logger.info("search-projects triggered.")
+    query = req.params.get("q", "").strip()
+    if not query:
+        return func.HttpResponse(
+            json.dumps({"projects": []}),
+            status_code=200,
+            mimetype="application/json",
+        )
+    try:
+        limit   = min(int(req.params.get("limit", 20)), 50)
+        results = search_projects(query, limit=limit)
+        return func.HttpResponse(
+            json.dumps({"projects": results}),
+            status_code=200,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        logger.exception("search-projects failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /api/validate
 # Body: application/json
 #   {
@@ -194,6 +233,71 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
         logger.exception("Agent validation failed.")
         return func.HttpResponse(
             json.dumps({"error": f"Validation failed: {exc}"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    return func.HttpResponse(
+        json.dumps(result),
+        status_code=200,
+        mimetype="application/json",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/batch-validate
+# Body: multipart/form-data or raw binary
+#   - file (or raw body): the MPPR .xlsx file
+#
+# Response:
+#   {
+#     "status":  "ok",
+#     "period":  "P07",
+#     "total":   N,
+#     "results": [
+#       {
+#         "project_name":      "...",
+#         "status":            "ok" | "skipped" | "error",
+#         "validation_result": "<agent free-form text>",
+#         "conversation_id":   "<uuid>"
+#       }
+#     ]
+#   }
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="batch-validate", methods=["POST"])
+def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Batch-validate all narratives in an MPPR Excel file using the AI Foundry agent.
+    Mirrors the RAG /api/batch-validate route for a consistent frontend API.
+    """
+    logger.info("batch-validate triggered.")
+
+    try:
+        file_bytes: bytes = b""
+        filename:   str   = ""
+
+        files = req.files
+        if files and "file" in files:
+            uploaded   = files["file"]
+            file_bytes = uploaded.read()
+            filename   = getattr(uploaded, "filename", "") or ""
+        else:
+            file_bytes = req.get_body()
+            filename   = req.params.get("filename", "")
+
+        if not file_bytes:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided. Send Excel as multipart 'file' or raw body."}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        result = run_agent_batch_validate(file_bytes, filename=filename)
+
+    except Exception as exc:
+        logger.exception("Agent batch validation failed.")
+        return func.HttpResponse(
+            json.dumps({"error": f"Batch validation failed: {exc}"}),
             status_code=500,
             mimetype="application/json",
         )

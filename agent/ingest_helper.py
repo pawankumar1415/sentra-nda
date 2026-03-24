@@ -212,6 +212,45 @@ def _extract_projects(file_stream: io.BytesIO, reporting_period: str) -> list[di
     return projects
 
 
+def search_projects(query: str, limit: int = 20) -> list:
+    """
+    Search indexed project names in Azure AI Search using a fuzzy text query.
+
+    Uses a wildcard search on the ProjectName field so partial names match,
+    e.g. "doun" returns "Dounreay Shaft and Silo".
+
+    Returns a list of dicts: [{project_name, period_short_name, narrative_text}]
+    """
+    client = SearchClient(
+        endpoint=SEARCH_ENDPOINT,
+        index_name=SEARCH_INDEX_NAME,
+        credential=_credential,
+    )
+
+    # Wildcard query: append * so partial words match
+    safe_query = query.strip().replace('"', "")
+    results = client.search(
+        search_text=f"{safe_query}*",
+        search_fields=["ProjectName"],
+        select=["ProjectName", "ReportingPeriod", "NarrativeText"],
+        top=limit,
+        order_by=["ProjectName asc"],
+    )
+
+    seen     = set()
+    projects = []
+    for doc in results:
+        name = doc.get("ProjectName") or ""
+        if name and name not in seen:
+            seen.add(name)
+            projects.append({
+                "project_name":     name,
+                "period_short_name": doc.get("ReportingPeriod") or "",
+                "narrative_text":   doc.get("NarrativeText")   or "",
+            })
+    return projects
+
+
 def upload_eac_file(file_bytes: bytes) -> dict:
     """
     Upload the EAC variance Excel file to Azure Blob Storage.
