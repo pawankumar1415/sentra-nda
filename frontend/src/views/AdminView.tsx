@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Shield, Trash2, UserCheck, UserX } from 'lucide-react';
-import { listUsers, updateUser, deleteUser, UserRecord } from '../services/api';
+import { listUsers, updateUser, deleteUser } from '../services/api';
+import type { UserRecord } from '../services/api';
 
 export default function AdminView() {
     const [users, setUsers] = useState<UserRecord[]>([]);
