@@ -47,19 +47,20 @@ MAX_HISTORY_MESSAGES: int = 20
 # Public API
 # ─────────────────────────────────────────────────────────────────────────────
 
-def create_session(metadata: Optional[Dict[str, Any]] = None) -> str:
+def create_session(metadata: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None) -> str:
     """
     Create a new chat session in the database and return its UUID.
 
     Args:
         metadata: Optional dict stored as JSONB on the session row.
                   Useful for tagging the originating project, user-agent, etc.
+        user_id:  UUID of the authenticated user — scopes the session.
 
     Returns:
         session_id as a string (UUID v4).
 
     Example:
-        session_id = create_session({"source": "chat_view"})
+        session_id = create_session({"source": "chat_view"}, user_id="abc-123")
     """
     session_id = str(uuid.uuid4())
     meta_json  = json.dumps(metadata or {})
@@ -68,13 +69,13 @@ def create_session(metadata: Optional[Dict[str, Any]] = None) -> str:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO chat_sessions (session_id, metadata)
-                VALUES (%s, %s)
+                INSERT INTO chat_sessions (session_id, metadata, user_id)
+                VALUES (%s, %s, %s)
                 """,
-                (session_id, meta_json),
+                (session_id, meta_json, user_id),
             )
 
-    logger.info("Created chat session %s", session_id)
+    logger.info("Created chat session %s (user_id=%s)", session_id, user_id)
     return session_id
 
 

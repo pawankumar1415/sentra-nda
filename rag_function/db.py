@@ -105,6 +105,16 @@ _EMBEDDING_DIMS = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
 _SCHEMA_SQL = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- ── Users (auth) ──────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS users (
+    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    username      TEXT        UNIQUE NOT NULL,
+    password_hash TEXT        NOT NULL,
+    is_admin      BOOLEAN     NOT NULL DEFAULT FALSE,
+    is_active     BOOLEAN     NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── NDA project narratives (vector store) ─────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nda_projects (
     project_id              TEXT PRIMARY KEY,
@@ -119,50 +129,42 @@ CREATE TABLE IF NOT EXISTS nda_projects (
     narrative_text          TEXT,
     raw_content             TEXT NOT NULL,
     embedding               vector({_EMBEDDING_DIMS}),
-    indexed_at              TIMESTAMPTZ DEFAULT NOW()
+    indexed_at              TIMESTAMPTZ DEFAULT NOW(),
+    user_id                 UUID REFERENCES users(id)
 );
 
 -- ── EAC variance lookup table ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nda_eac_variance (
-    project_name            TEXT PRIMARY KEY,
+    project_name            TEXT        NOT NULL,
+    user_id                 UUID        NOT NULL REFERENCES users(id),
     period_short_name       TEXT,
     eac_variance            DOUBLE PRECISION,
     schedule_variance_days  INTEGER,
     flag                    TEXT,
     summary_text            TEXT,
-    updated_at              TIMESTAMPTZ DEFAULT NOW()
+    updated_at              TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (project_name, user_id)
 );
 
 -- ── Conversation memory: sessions ─────────────────────────────────────────────
--- Each row represents one chat session (one browser tab / one user conversation).
--- session_id is a UUID generated server-side and returned to the client on the
--- first message; the client stores it in localStorage and sends it on subsequent
--- calls so the server can reload history without the client tracking messages.
 CREATE TABLE IF NOT EXISTS chat_sessions (
     session_id  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- Optional free-form metadata (e.g. user-agent, originating project name)
-    metadata    JSONB       NOT NULL DEFAULT '{{}}'
+    metadata    JSONB       NOT NULL DEFAULT '{{}}',
+    user_id     UUID        REFERENCES users(id)
 );
 
 -- ── Conversation memory: messages ─────────────────────────────────────────────
--- Stores every user/assistant exchange. The full history is kept permanently
--- for audit purposes; only the last N messages are loaded for each LLM call
--- (controlled by MAX_HISTORY_MESSAGES in conversation.py).
 CREATE TABLE IF NOT EXISTS chat_messages (
     id          BIGSERIAL   PRIMARY KEY,
     session_id  UUID        NOT NULL REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
     role        TEXT        NOT NULL CHECK (role IN ('user', 'assistant')),
     content     TEXT        NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- Stores per-message metadata such as detected intent and projects list
-    -- so we can replay/audit exactly what context the LLM received
     metadata    JSONB       NOT NULL DEFAULT '{{}}'
 );
 
--- Index on (session_id, id) so loading history for a session is a single
--- efficient index scan ordered by insertion sequence.
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session
     ON chat_messages(session_id, id ASC);
 
@@ -173,22 +175,25 @@ CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
     WITH (lists = 50);
 """
 
+# Run on every cold-start to migrate existing deployments that pre-date auth.
+_MIGRATION_SQL = """
+ALTER TABLE nda_projects     ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE chat_sessions    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+"""
 
-def search_projects(query: str, limit: int = 20) -> list:
+
+def search_projects(query: str, user_id: str, limit: int = 20) -> list:
     """
-    Search indexed project names in nda_projects using a case-insensitive
-    ILIKE pattern match.  Returns the most recently indexed narrative for
-    each matching project so the caller can pre-populate the validate form.
+    Search indexed project names in nda_projects scoped to the given user.
 
     Args:
-        query:  Partial project name to search for (ILIKE '%query%').
-        limit:  Maximum number of distinct projects to return.
+        query:   Partial project name to search for (ILIKE '%query%').
+        user_id: UUID of the authenticated user — only their projects are returned.
+        limit:   Maximum number of distinct projects to return.
 
     Returns:
         List of dicts: [{project_name, period_short_name, narrative_text}]
     """
-    # DISTINCT ON (project_name) with ORDER BY indexed_at DESC gives us the
-    # most recent narrative for each matching project in one efficient query.
     sql = """
         SELECT DISTINCT ON (project_name)
                project_name,
@@ -196,6 +201,7 @@ def search_projects(query: str, limit: int = 20) -> list:
                narrative_text
         FROM   nda_projects
         WHERE  project_name ILIKE %s
+          AND  user_id = %s
         ORDER  BY project_name, indexed_at DESC
         LIMIT  %s
     """
@@ -203,23 +209,24 @@ def search_projects(query: str, limit: int = 20) -> list:
     results = []
     with DBConnection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (pattern, limit))
+            cur.execute(sql, (pattern, user_id, limit))
             for row in cur.fetchall():
                 results.append({
-                    "project_name":     row[0],
+                    "project_name":      row[0],
                     "period_short_name": row[1] or "",
-                    "narrative_text":   row[2] or "",
+                    "narrative_text":    row[2] or "",
                 })
     return results
 
 
 def ensure_schema() -> None:
-    """Create pgvector extension, table, and index if not present. Idempotent."""
+    """Create all tables/indexes if not present, then run ALTER TABLE migrations. Idempotent."""
     try:
         with DBConnection() as conn:
             with conn.cursor() as cur:
                 cur.execute(_SCHEMA_SQL)
-        logger.info("DB schema verified / created")
+                cur.execute(_MIGRATION_SQL)
+        logger.info("DB schema verified / migrated")
     except Exception as exc:
         logger.error("Failed to ensure DB schema: %s", exc)
         raise

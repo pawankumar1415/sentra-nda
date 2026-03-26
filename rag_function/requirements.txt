@@ -5,3 +5,4 @@ pgvector>=0.3.2
 pandas>=2.2.0
 openpyxl>=3.1.2
 azure-identity>=1.16.0
+PyJWT>=2.8.0

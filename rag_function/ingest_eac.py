@@ -95,22 +95,23 @@ def parse_eac_excel(file_bytes: bytes) -> List[Dict]:
     return projects
 
 
-def run_ingest_eac(file_bytes: bytes) -> Dict:
-    """Pipelines EAC excel bytes into PostgreSQL table."""
-    logger.info("Starting EAC ingest pipeline")
-    
+def run_ingest_eac(file_bytes: bytes, user_id: str = "") -> Dict:
+    """Pipelines EAC excel bytes into PostgreSQL table (scoped to user_id)."""
+    logger.info("Starting EAC ingest pipeline (user_id=%s)", user_id)
+
     projects = parse_eac_excel(file_bytes)
     if not projects:
         return {"status": "warning", "message": "No EAC rows found", "indexed": 0}
 
+    # Composite PK is (project_name, user_id) so each user's EAC data is isolated
     upsert_sql = """
         INSERT INTO nda_eac_variance (
-            project_name, period_short_name, eac_variance,
+            project_name, user_id, period_short_name, eac_variance,
             schedule_variance_days, flag, summary_text, updated_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, NOW()
+            %s, %s, %s, %s, %s, %s, %s, NOW()
         )
-        ON CONFLICT (project_name) DO UPDATE SET
+        ON CONFLICT (project_name, user_id) DO UPDATE SET
             period_short_name      = EXCLUDED.period_short_name,
             eac_variance           = EXCLUDED.eac_variance,
             schedule_variance_days = EXCLUDED.schedule_variance_days,
@@ -124,6 +125,7 @@ def run_ingest_eac(file_bytes: bytes) -> Dict:
             for p in projects:
                 cur.execute(upsert_sql, (
                     p["project_name"],
+                    user_id or None,
                     p["period_short_name"],
                     p["eac_variance"],
                     p["schedule_variance_days"],

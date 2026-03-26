@@ -18,7 +18,7 @@ from validate import run_validate
 logger = logging.getLogger(__name__)
 
 
-def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5) -> Dict:
+def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5, user_id: str = "") -> Dict:
     """
     Full batch validation pipeline without database ingestion.
     Returns the consolidated JSON validation results.
@@ -27,8 +27,9 @@ def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5) ->
         file_bytes: Raw Excel file bytes.
         filename:   Original filename for period extraction.
         top_k:      Number of similar project chunks to retrieve.
+        user_id:    UUID of the authenticated user — scopes all DB queries.
     """
-    logger.info("Starting batch validation pipeline (filename=%s)", filename or "<none>")
+    logger.info("Starting batch validation pipeline (filename=%s, user_id=%s)", filename or "<none>", user_id)
 
     period, projects = parse_excel(file_bytes, filename=filename)
     if not projects:
@@ -59,7 +60,8 @@ def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5) ->
                 narrative=narrative_text,
                 project_name=project_name,
                 period=period,
-                top_k=top_k
+                top_k=top_k,
+                user_id=user_id or None,
             )
             val_result["project_name"] = project_name
             results.append(val_result)

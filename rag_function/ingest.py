@@ -231,20 +231,21 @@ def list_projects_from_bytes(file_bytes: bytes, filename: str = "") -> Dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Ingest pipeline
 # ─────────────────────────────────────────────────────────────────────────────
-def run_ingest(file_bytes: bytes, filename: str = "") -> Dict:
+def run_ingest(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict:
     """
     Full ingest pipeline:
       1. Parse Excel → project rows
       2. Batch-embed raw_content strings
-      3. Upsert all rows into nda_projects
+      3. Upsert all rows into nda_projects (scoped to user_id)
 
     Args:
         file_bytes: Raw Excel file bytes.
         filename:   Original filename for period extraction.
+        user_id:    UUID of the authenticated user — data is isolated per user.
 
     Returns a summary dict suitable for the HTTP response.
     """
-    logger.info("Starting ingest pipeline (filename=%s)", filename or "<none>")
+    logger.info("Starting ingest pipeline (filename=%s, user_id=%s)", filename or "<none>", user_id)
 
     period, projects = parse_excel(file_bytes, filename=filename)
     if not projects:
@@ -256,15 +257,16 @@ def run_ingest(file_bytes: bytes, filename: str = "") -> Dict:
     texts   = [p["raw_content"] for p in projects]
     vectors = embed_batch(texts)
 
-    # 2 — upsert to PostgreSQL
+    # 2 — upsert to PostgreSQL (project_id is scoped per user so two users can
+    #     upload the same period file without overwriting each other's data)
     upsert_sql = """
         INSERT INTO nda_projects (
             project_id, project_name, period_short_name,
             rag_status, dca_rag_status, capability_capacity_rag,
             eac_total, eac_variance, schedule_variance_days,
-            narrative_text, raw_content, embedding, indexed_at
+            narrative_text, raw_content, embedding, indexed_at, user_id
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s
         )
         ON CONFLICT (project_id) DO UPDATE SET
             project_name            = EXCLUDED.project_name,
@@ -277,14 +279,17 @@ def run_ingest(file_bytes: bytes, filename: str = "") -> Dict:
             narrative_text          = EXCLUDED.narrative_text,
             raw_content             = EXCLUDED.raw_content,
             embedding               = EXCLUDED.embedding,
-            indexed_at              = NOW();
+            indexed_at              = NOW(),
+            user_id                 = EXCLUDED.user_id;
     """
 
     with DBConnection() as conn:
         with conn.cursor() as cur:
             for project, vector in zip(projects, vectors):
+                # Prefix project_id with user_id so each user has their own namespace
+                scoped_id = f"{user_id}|{project['project_id']}" if user_id else project["project_id"]
                 cur.execute(upsert_sql, (
-                    project["project_id"],
+                    scoped_id,
                     project["project_name"],
                     project["period_short_name"],
                     project["rag_status"],
@@ -296,6 +301,7 @@ def run_ingest(file_bytes: bytes, filename: str = "") -> Dict:
                     project["narrative_text"],
                     project["raw_content"],
                     vector,
+                    user_id or None,
                 ))
 
     logger.info("Upserted %d projects to nda_projects", len(projects))

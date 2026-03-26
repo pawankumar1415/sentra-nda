@@ -54,9 +54,9 @@ _EAC_THRESHOLD_HIGH  = 100_000   # £0.1m → must appear in narrative
 _EAC_THRESHOLD_MAJOR = 500_000   # £0.5m → needs explicit explanation
 
 
-def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
+def _load_eac_data(project_name: str, period: Optional[str], user_id: Optional[str] = None) -> Dict[str, Any]:
     """
-    Retrieve EAC movement data for the given project from PostgreSQL.
+    Retrieve EAC movement data for the given project from PostgreSQL, scoped to user_id.
 
     Returns a dict with keys: eac_variance, schedule_days, flag, summary_text
     Falls back gracefully if not found.
@@ -72,13 +72,14 @@ def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
         SELECT eac_variance, schedule_variance_days, flag, summary_text
         FROM nda_eac_variance
         WHERE lower(project_name) LIKE lower(%s)
+          AND user_id = %s
     """
-    params = [f"%{project_name}%"]
-    
+    params = [f"%{project_name}%", user_id]
+
     if period:
         sql += " AND lower(period_short_name) = lower(%s)"
         params.append(period)
-        
+
     sql += " LIMIT 1;"
 
     with DBConnection() as conn:
@@ -94,13 +95,14 @@ def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
                     SELECT eac_variance, schedule_variance_days, flag, summary_text
                     FROM nda_eac_variance
                     WHERE lower(project_name) LIKE lower(%s)
+                      AND user_id = %s
                     ORDER BY period_short_name DESC LIMIT 1;
                 """
-                cur.execute(fallback_sql, (f"%{project_name}%",))
+                cur.execute(fallback_sql, (f"%{project_name}%", user_id))
                 row = cur.fetchone()
 
     if not row:
-        logger.warning("EAC variance data not found in DB for %s", project_name)
+        logger.warning("EAC variance data not found in DB for %s (user_id=%s)", project_name, user_id)
         return default
 
     return {
@@ -112,9 +114,9 @@ def _load_eac_data(project_name: str, period: Optional[str]) -> Dict[str, Any]:
 
 
 # ── Vector retrieval ──────────────────────────────────────────────────────────
-def _retrieve(query_vector: List[float], project_name: Optional[str], top_k: int = 5) -> List[Dict]:
+def _retrieve(query_vector: List[float], project_name: Optional[str], top_k: int = 5, user_id: Optional[str] = None) -> List[Dict]:
     """
-    Run pgvector cosine similarity search. Optionally filter by project name.
+    Run pgvector cosine similarity search scoped to user_id. Optionally filter by project name.
     Returns list of dicts with keys: project_name, period_short_name, raw_content, score.
     """
     if project_name:
@@ -123,19 +125,21 @@ def _retrieve(query_vector: List[float], project_name: Optional[str], top_k: int
                    1 - (embedding <=> %s::vector) AS score
             FROM nda_projects
             WHERE lower(project_name) LIKE lower(%s)
+              AND user_id = %s
             ORDER BY embedding <=> %s::vector
             LIMIT %s;
         """
-        params = (query_vector, f"%{project_name}%", query_vector, top_k)
+        params = (query_vector, f"%{project_name}%", user_id, query_vector, top_k)
     else:
         sql = """
             SELECT project_name, period_short_name, raw_content, narrative_text,
                    1 - (embedding <=> %s::vector) AS score
             FROM nda_projects
+            WHERE user_id = %s
             ORDER BY embedding <=> %s::vector
             LIMIT %s;
         """
-        params = (query_vector, query_vector, top_k)
+        params = (query_vector, user_id, query_vector, top_k)
 
     with DBConnection() as conn:
         with conn.cursor() as cur:
@@ -220,6 +224,7 @@ def run_validate(
     project_name: str,
     period: Optional[str] = None,
     top_k: int = 5,
+    user_id: Optional[str] = None,
 ) -> Dict:
     """
     Full validation pipeline. Returns the structured JSON validation result.
@@ -229,18 +234,19 @@ def run_validate(
         project_name: Used for EAC lookup and vector search filter.
         period:       Optional period filter (e.g. "P07") for EAC lookup.
         top_k:        Number of similar project chunks to retrieve.
+        user_id:      UUID of the authenticated user — scopes DB queries.
     """
-    logger.info("Validating narrative for project: %s", project_name)
+    logger.info("Validating narrative for project: %s (user_id=%s)", project_name, user_id)
 
     # 1 — embed the narrative text itself as the query
     query_vector = embed(narrative)
 
     # 2 — retrieve similar project data from PGVector
-    chunks = _retrieve(query_vector, project_name, top_k=top_k)
+    chunks = _retrieve(query_vector, project_name, top_k=top_k, user_id=user_id)
     logger.info("Retrieved %d chunks from PGVector", len(chunks))
 
     # 3 — load EAC variance data
-    eac_data = _load_eac_data(project_name, period)
+    eac_data = _load_eac_data(project_name, period, user_id=user_id)
     logger.info("EAC flag: %s | variance: £%.2fm", eac_data["flag"],
                 eac_data["eac_variance"] / 1_000_000)
 

@@ -1,13 +1,21 @@
 """
 rag_function/function_app.py — Azure Functions v2 entry point.
 
-Two HTTP routes:
-    POST /api/ingest    — Upload Excel → embed → upsert to PGVector
-    POST /api/validate  — Validate narrative → RAG + EAC → GPT response
+Routes:
+    POST /api/auth/register       — Create account (open)
+    POST /api/auth/login          — Obtain JWT token
 
-Cold-start initialisation:
-    - Ensures PostgreSQL schema exists (table + pgvector index)
-    - All heavy imports (psycopg2, openai, pandas) happen at module load
+    GET  /api/admin/users         — List all users with stats       [admin]
+    POST /api/admin/users/update  — Toggle active / admin flag      [admin]
+    POST /api/admin/users/delete  — Delete user and all their data  [admin]
+
+    POST /api/ingest              — Upload MPPR Excel → embed → PGVector  [auth]
+    POST /api/ingest-eac          — Upload EAC variance Excel              [auth]
+    POST /api/validate            — Validate single narrative              [auth]
+    POST /api/chat                — Conversational RAG with session memory [auth]
+    POST /api/list-projects       — Extract project list from Excel        [auth]
+    GET  /api/search-projects     — Fuzzy search indexed project names     [auth]
+    POST /api/batch-validate      — Validate every narrative in an Excel   [auth]
 """
 
 import json
@@ -15,6 +23,11 @@ import logging
 
 import azure.functions as func
 
+from auth import (
+    register_user, login_user,
+    require_auth, require_admin,
+    list_users, update_user, delete_user,
+)
 from db import ensure_schema, search_projects
 from ingest import run_ingest, list_projects_from_bytes
 from ingest_eac import run_ingest_eac
@@ -24,7 +37,6 @@ from chat import run_chat
 
 logger = logging.getLogger(__name__)
 
-# ── App registration ───────────────────────────────────────────────────────────
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 # ── Cold-start: ensure DB schema exists ───────────────────────────────────────
@@ -33,28 +45,167 @@ try:
     logger.info("Cold-start DB schema check: OK")
 except Exception as _e:
     logger.error("Cold-start DB schema check FAILED: %s", _e)
-    # Don't raise — let the function start and surface errors per-request
 
 
-# ── Route 1: Ingest ───────────────────────────────────────────────────────────
-@app.route(route="ingest", methods=["POST"])
-def ingest(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/ingest
+# ── Helper: standard error responses ──────────────────────────────────────────
 
-    Accepts an Excel file (5a)NDA MPPR sheet) either as:
-      - multipart/form-data with field name 'file'
-      - raw binary body (Content-Type: application/octet-stream)
+def _err(message: str, status: int) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps({"error": message}),
+        status_code=status,
+        mimetype="application/json",
+    )
 
-    Returns JSON: { "status": "ok", "period": "P07", "indexed": 42 }
-    """
-    logger.info("POST /api/ingest — request received")
+
+def _ok(data: dict, status: int = 200) -> func.HttpResponse:
+    return func.HttpResponse(
+        json.dumps(data),
+        status_code=status,
+        mimetype="application/json",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTH ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route(route="auth/register", methods=["POST"])
+def auth_register(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/auth/register — { username, password } → { token, username, is_admin }"""
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _err("Request body must be valid JSON", 400)
+
+    username = body.get("username", "").strip()
+    password = body.get("password", "")
 
     try:
-        # Accept multipart upload OR raw binary body
+        result = register_user(username, password)
+        return _ok(result, 201)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        logger.exception("Register failed: %s", exc)
+        return _err("Registration failed. Please try again.", 500)
+
+
+@app.route(route="auth/login", methods=["POST"])
+def auth_login(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/auth/login — { username, password } → { token, username, is_admin }"""
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _err("Request body must be valid JSON", 400)
+
+    username = body.get("username", "").strip()
+    password = body.get("password", "")
+
+    try:
+        result = login_user(username, password)
+        return _ok(result)
+    except ValueError as exc:
+        return _err(str(exc), 401)
+    except Exception as exc:
+        logger.exception("Login failed: %s", exc)
+        return _err("Login failed. Please try again.", 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ADMIN ROUTES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route(route="admin/users", methods=["GET"])
+def admin_list_users(req: func.HttpRequest) -> func.HttpResponse:
+    """GET /api/admin/users — Returns all users with stats. Admin only."""
+    try:
+        require_admin(req)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+
+    try:
+        users = list_users()
+        return _ok({"users": users})
+    except Exception as exc:
+        logger.exception("admin_list_users failed: %s", exc)
+        return _err("Failed to retrieve users.", 500)
+
+
+@app.route(route="admin/users/update", methods=["POST"])
+def admin_update_user(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/admin/users/update — { user_id, is_active?, is_admin? }. Admin only."""
+    try:
+        admin = require_admin(req)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _err("Request body must be valid JSON", 400)
+
+    target_user_id = body.get("user_id", "").strip()
+    if not target_user_id:
+        return _err("'user_id' is required", 400)
+
+    kwargs = {}
+    if "is_active" in body:
+        kwargs["is_active"] = bool(body["is_active"])
+    if "is_admin" in body:
+        kwargs["is_admin"] = bool(body["is_admin"])
+
+    try:
+        result = update_user(target_user_id, admin["user_id"], **kwargs)
+        return _ok(result)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        logger.exception("admin_update_user failed: %s", exc)
+        return _err("Failed to update user.", 500)
+
+
+@app.route(route="admin/users/delete", methods=["POST"])
+def admin_delete_user(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/admin/users/delete — { user_id }. Admin only."""
+    try:
+        admin = require_admin(req)
+    except PermissionError as exc:
+        return _err(str(exc), 403)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _err("Request body must be valid JSON", 400)
+
+    target_user_id = body.get("user_id", "").strip()
+    if not target_user_id:
+        return _err("'user_id' is required", 400)
+
+    try:
+        result = delete_user(target_user_id, admin["user_id"])
+        return _ok(result)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        logger.exception("admin_delete_user failed: %s", exc)
+        return _err("Failed to delete user.", 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DATA ROUTES  (all require a valid JWT)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route(route="ingest", methods=["POST"])
+def ingest(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/ingest — Upload MPPR Excel → embed → upsert to PGVector."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
+
+    try:
         file_bytes: bytes = b""
         filename: str = ""
-
         files = req.files
         if files and "file" in files:
             uploaded = files["file"]
@@ -62,54 +213,29 @@ def ingest(req: func.HttpRequest) -> func.HttpResponse:
             filename = getattr(uploaded, "filename", "") or ""
         else:
             file_bytes = req.get_body()
-            # Allow filename via query param for raw body uploads
             filename = req.params.get("filename", "")
 
         if not file_bytes:
-            return func.HttpResponse(
-                json.dumps({"error": "No file provided. "
-                            "Send Excel as multipart field 'file' or raw body."}),
-                status_code=400,
-                mimetype="application/json",
-            )
+            return _err("No file provided. Send Excel as multipart field 'file' or raw body.", 400)
 
-        result = run_ingest(file_bytes, filename=filename)
-
-        return func.HttpResponse(
-            json.dumps(result),
-            status_code=200,
-            mimetype="application/json",
-        )
+        result = run_ingest(file_bytes, filename=filename, user_id=user["user_id"])
+        return _ok(result)
 
     except ValueError as exc:
-        # Bad input (e.g. wrong sheet name)
-        logger.warning("Ingest validation error: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": str(exc)}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err(str(exc), 400)
     except Exception as exc:
         logger.exception("Ingest pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        return _err("Internal error", 500)
 
 
-# ── Route 2: Ingest EAC ───────────────────────────────────────────────────────
 @app.route(route="ingest-eac", methods=["POST"])
 def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/ingest-eac
+    """POST /api/ingest-eac — Upload EAC variance Excel."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
-    Accepts an Excel file (lifecycle_eac_variance.xlsx) either as:
-      - multipart/form-data with field name 'file'
-      - raw binary body
-    """
-    logger.info("POST /api/ingest-eac — request received")
-    
     try:
         file_bytes: bytes = b""
         files = req.files
@@ -119,54 +245,28 @@ def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
             file_bytes = req.get_body()
 
         if not file_bytes:
-            return func.HttpResponse(
-                json.dumps({"error": "No file provided"}),
-                status_code=400,
-                mimetype="application/json",
-            )
+            return _err("No file provided", 400)
 
-        result = run_ingest_eac(file_bytes)
+        result = run_ingest_eac(file_bytes, user_id=user["user_id"])
+        return _ok(result)
 
-        return func.HttpResponse(
-            json.dumps(result),
-            status_code=200,
-            mimetype="application/json",
-        )
     except Exception as exc:
-        logger.exception("EAC Ingest pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        logger.exception("EAC Ingest failed: %s", exc)
+        return _err("Internal error", 500)
 
 
-# ── Route 3: Validate ─────────────────────────────────────────────────────────
 @app.route(route="validate", methods=["POST"])
 def validate(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/validate
-
-    Request body (JSON):
-    {
-        "narrative":     "<the narrative text to validate>",
-        "project_name":  "<project name for data lookup>",
-        "period":        "P07"   (optional — used for EAC lookup)
-        "top_k":         5       (optional — number of similar chunks to retrieve)
-    }
-
-    Returns JSON with Layer 1 + Layer 2 validation results.
-    """
-    logger.info("POST /api/validate — request received")
+    """POST /api/validate — Validate a single narrative."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
     try:
         body = req.get_json()
     except ValueError:
-        return func.HttpResponse(
-            json.dumps({"error": "Request body must be valid JSON"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err("Request body must be valid JSON", 400)
 
     narrative    = body.get("narrative", "").strip()
     project_name = body.get("project_name", "").strip()
@@ -174,17 +274,9 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
     top_k        = int(body.get("top_k", 5))
 
     if not narrative:
-        return func.HttpResponse(
-            json.dumps({"error": "'narrative' field is required"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err("'narrative' field is required", 400)
     if not project_name:
-        return func.HttpResponse(
-            json.dumps({"error": "'project_name' field is required"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err("'project_name' field is required", 400)
 
     try:
         result = run_validate(
@@ -192,118 +284,58 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
             project_name=project_name,
             period=period,
             top_k=top_k,
+            user_id=user["user_id"],
         )
-        return func.HttpResponse(
-            json.dumps(result, indent=2),
-            status_code=200,
-            mimetype="application/json",
-        )
-
+        return func.HttpResponse(json.dumps(result, indent=2), status_code=200, mimetype="application/json")
     except Exception as exc:
         logger.exception("Validation pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        return _err(f"Validation failed: {exc}", 500)
 
-# ── Route 4: Chat ─────────────────────────────────────────────────────────────
+
 @app.route(route="chat", methods=["POST"])
 def chat(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/chat
-
-    Conversational RAG endpoint with server-side session memory.
-
-    Request body (JSON):
-    {
-        "question":   "What is the portfolio health?",     -- required
-        "session_id": "550e8400-e29b-41d4-a716-446655440000"  -- optional UUID
-
-        -- Legacy fallback (ignored when session_id is valid):
-        "history": [
-            {"role": "user",      "content": "hello"},
-            {"role": "assistant", "content": "hi"}
-        ]
-    }
-
-    Response body (JSON):
-    {
-        "answer":     "In P07, the portfolio shows ...",   -- markdown string
-        "session_id": "550e8400-e29b-41d4-a716-446655440000",  -- store in localStorage
-        "meta": {
-            "intent":            "portfolio_summary",
-            "projects_detected": [],
-            "context_length":    1243,
-            "is_new_session":    true
-        }
-    }
-
-    Session lifecycle:
-      - First call: omit session_id (or send null) → server creates a new session
-        and returns session_id in the response.
-      - Subsequent calls: send the returned session_id → server loads history from
-        PostgreSQL and continues the conversation.
-      - New conversation: send session_id=null again (or a fresh UUID the server
-        won't recognise) → server creates a new session.
-    """
-    logger.info("POST /api/chat — request received")
+    """POST /api/chat — Conversational RAG with session memory."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
     try:
         body = req.get_json()
     except ValueError:
-        return func.HttpResponse(
-            json.dumps({"error": "Request body must be valid JSON"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err("Request body must be valid JSON", 400)
 
     question   = body.get("question", "").strip()
-    session_id = body.get("session_id") or None   # treat empty string as None
-    # Legacy history array — used only when session_id is absent/invalid
+    session_id = body.get("session_id") or None
     history    = body.get("history", [])
 
     if not question:
-        return func.HttpResponse(
-            json.dumps({"error": "'question' field is required"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+        return _err("'question' field is required", 400)
 
     try:
         result = run_chat(
             question=question,
             session_id=session_id,
             history=history,
+            user_id=user["user_id"],
         )
-        return func.HttpResponse(
-            json.dumps(result, indent=2),
-            status_code=200,
-            mimetype="application/json",
-        )
-
+        return func.HttpResponse(json.dumps(result, indent=2), status_code=200, mimetype="application/json")
     except Exception as exc:
         logger.exception("Chat pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        return _err("Internal error", 500)
 
-# ── Route 5: List Projects ────────────────────────────────────────────────────
+
 @app.route(route="list-projects", methods=["POST"])
 def list_projects(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/list-projects
-
-    Accepts an Excel file. Returns lightweight period and project metadata.
-    """
-    logger.info("POST /api/list-projects — request received")
+    """POST /api/list-projects — Extract project list from Excel (no DB write)."""
+    try:
+        require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
     try:
         file_bytes: bytes = b""
         filename: str = ""
-
         files = req.files
         if files and "file" in files:
             uploaded = files["file"]
@@ -314,85 +346,48 @@ def list_projects(req: func.HttpRequest) -> func.HttpResponse:
             filename = req.params.get("filename", "")
 
         if not file_bytes:
-            return func.HttpResponse(
-                json.dumps({"error": "No file provided. Send Excel as multipart field 'file' or raw body."}),
-                status_code=400,
-                mimetype="application/json",
-            )
+            return _err("No file provided.", 400)
 
         result = list_projects_from_bytes(file_bytes, filename=filename)
-
-        return func.HttpResponse(
-            json.dumps(result),
-            status_code=200,
-            mimetype="application/json",
-        )
+        return _ok(result)
 
     except Exception as exc:
-        logger.exception("List projects pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        logger.exception("List projects failed: %s", exc)
+        return _err("Internal error", 500)
 
 
-# ── Route 6: Search Projects ─────────────────────────────────────────────────
 @app.route(route="search-projects", methods=["GET"])
 def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    GET /api/search-projects?q=<term>&limit=20
-
-    Full-text search across indexed project names in PGVector.
-    Returns projects whose names match the query string (case-insensitive).
-    Each result includes the most recently indexed narrative so the user can
-    pre-populate the validate form without uploading an Excel file first.
-
-    Query params:
-        q      — search term (2+ characters recommended)
-        limit  — max results, default 20
-    """
-    logger.info("GET /api/search-projects — request received")
+    """GET /api/search-projects?q=<term>&limit=20 — Search user's indexed projects."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
     query = req.params.get("q", "").strip()
     if not query:
-        return func.HttpResponse(
-            json.dumps({"projects": []}),
-            status_code=200,
-            mimetype="application/json",
-        )
+        return _ok({"projects": []})
 
     try:
         limit   = min(int(req.params.get("limit", 20)), 50)
-        results = search_projects(query, limit=limit)
-        return func.HttpResponse(
-            json.dumps({"projects": results}),
-            status_code=200,
-            mimetype="application/json",
-        )
+        results = search_projects(query, user_id=user["user_id"], limit=limit)
+        return _ok({"projects": results})
     except Exception as exc:
         logger.exception("search-projects failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        return _err("Internal error", 500)
 
 
-# ── Route 7: Batch Validate ───────────────────────────────────────────────────
 @app.route(route="batch-validate", methods=["POST"])
 def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
-    """
-    POST /api/batch-validate
-
-    Accepts an Excel file. Runs validation on every narrative found.
-    """
-    logger.info("POST /api/batch-validate — request received")
+    """POST /api/batch-validate — Validate every narrative in an Excel file."""
+    try:
+        user = require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
 
     try:
         file_bytes: bytes = b""
         filename: str = ""
-
         files = req.files
         if files and "file" in files:
             uploaded = files["file"]
@@ -403,27 +398,14 @@ def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
             filename = req.params.get("filename", "")
 
         if not file_bytes:
-            return func.HttpResponse(
-                json.dumps({"error": "No file provided. Send Excel as multipart field 'file' or raw body."}),
-                status_code=400,
-                mimetype="application/json",
-            )
+            return _err("No file provided.", 400)
 
-        # Allow passing top_k via query param, defaulting to 5
-        top_k = int(req.params.get("top_k", 5))
-
-        result = run_batch_validate(file_bytes, filename=filename, top_k=top_k)
-
-        return func.HttpResponse(
-            json.dumps(result),
-            status_code=200,
-            mimetype="application/json",
+        top_k  = int(req.params.get("top_k", 5))
+        result = run_batch_validate(
+            file_bytes, filename=filename, top_k=top_k, user_id=user["user_id"]
         )
+        return _ok(result)
 
     except Exception as exc:
-        logger.exception("Batch validate pipeline failed: %s", exc)
-        return func.HttpResponse(
-            json.dumps({"error": "Internal error", "detail": str(exc)}),
-            status_code=500,
-            mimetype="application/json",
-        )
+        logger.exception("Batch validate failed: %s", exc)
+        return _err("Internal error", 500)
