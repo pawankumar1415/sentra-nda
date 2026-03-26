@@ -16,3 +16,6 @@ azure-search-documents
 azure-ai-projects
 azure-ai-agents
 azure-identity
+
+# Auth
+PyJWT
