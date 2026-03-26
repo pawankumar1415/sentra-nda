@@ -2,9 +2,14 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import json
+import argparse
 
-# URL of the deployed Azure Function
-URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api/validate"
+parser = argparse.ArgumentParser()
+parser.add_argument("--key", required=True, help="Azure Function host key")
+args = parser.parse_args()
+
+BASE = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api"
+URL = f"{BASE}/validate?code={args.key}"
 
 # The test payload
 data = {
