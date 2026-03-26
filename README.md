@@ -119,9 +119,9 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET  | `/api/admin/users` | List all users with stats |
-| POST | `/api/admin/users/update` | Toggle `is_active` or `is_admin` flag |
-| POST | `/api/admin/users/delete` | Delete user and all their data |
+| GET  | `/api/mgmt/users` | List all users with stats |
+| POST | `/api/mgmt/users/update` | Toggle `is_active` or `is_admin` flag |
+| POST | `/api/mgmt/users/delete` | Delete user and all their data |
 
 **Data (auth JWT required)**
 

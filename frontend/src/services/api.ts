@@ -87,7 +87,7 @@ export interface UserRecord {
 }
 
 export const listUsers = async (): Promise<UserRecord[]> => {
-    const url = `${API_BASE_URL}/admin/users${getAuthParams()}`;
+    const url = `${API_BASE_URL}/mgmt/users${getAuthParams()}`;
     const response = await fetch(url, { headers: authHeaders() });
     if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -98,7 +98,7 @@ export const listUsers = async (): Promise<UserRecord[]> => {
 };
 
 export const updateUser = async (user_id: string, changes: { is_active?: boolean; is_admin?: boolean }): Promise<void> => {
-    const url = `${API_BASE_URL}/admin/users/update${getAuthParams()}`;
+    const url = `${API_BASE_URL}/mgmt/users/update${getAuthParams()}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -111,7 +111,7 @@ export const updateUser = async (user_id: string, changes: { is_active?: boolean
 };
 
 export const deleteUser = async (user_id: string): Promise<void> => {
-    const url = `${API_BASE_URL}/admin/users/delete${getAuthParams()}`;
+    const url = `${API_BASE_URL}/mgmt/users/delete${getAuthParams()}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),

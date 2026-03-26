@@ -5,9 +5,9 @@ Routes:
     POST /api/auth/register       — Create account (open)
     POST /api/auth/login          — Obtain JWT token
 
-    GET  /api/admin/users         — List all users with stats       [admin]
-    POST /api/admin/users/update  — Toggle active / admin flag      [admin]
-    POST /api/admin/users/delete  — Delete user and all their data  [admin]
+    GET  /api/mgmt/users         — List all users with stats       [admin]
+    POST /api/mgmt/users/update  — Toggle active / admin flag      [admin]
+    POST /api/mgmt/users/delete  — Delete user and all their data  [admin]
 
     POST /api/ingest              — Upload MPPR Excel → embed → PGVector  [auth]
     POST /api/ingest-eac          — Upload EAC variance Excel              [auth]
@@ -115,9 +115,9 @@ def auth_login(req: func.HttpRequest) -> func.HttpResponse:
 # ADMIN ROUTES
 # ══════════════════════════════════════════════════════════════════════════════
 
-@app.route(route="admin/users", methods=["GET"])
+@app.route(route="mgmt/users", methods=["GET"])
 def admin_list_users(req: func.HttpRequest) -> func.HttpResponse:
-    """GET /api/admin/users — Returns all users with stats. Admin only."""
+    """GET /api/mgmt/users — Returns all users with stats. Admin only."""
     try:
         require_admin(req)
     except PermissionError as exc:
@@ -131,9 +131,9 @@ def admin_list_users(req: func.HttpRequest) -> func.HttpResponse:
         return _err("Failed to retrieve users.", 500)
 
 
-@app.route(route="admin/users/update", methods=["POST"])
+@app.route(route="mgmt/users/update", methods=["POST"])
 def admin_update_user(req: func.HttpRequest) -> func.HttpResponse:
-    """POST /api/admin/users/update — { user_id, is_active?, is_admin? }. Admin only."""
+    """POST /api/mgmt/users/update — { user_id, is_active?, is_admin? }. Admin only."""
     try:
         admin = require_admin(req)
     except PermissionError as exc:
@@ -164,9 +164,9 @@ def admin_update_user(req: func.HttpRequest) -> func.HttpResponse:
         return _err("Failed to update user.", 500)
 
 
-@app.route(route="admin/users/delete", methods=["POST"])
+@app.route(route="mgmt/users/delete", methods=["POST"])
 def admin_delete_user(req: func.HttpRequest) -> func.HttpResponse:
-    """POST /api/admin/users/delete — { user_id }. Admin only."""
+    """POST /api/mgmt/users/delete — { user_id }. Admin only."""
     try:
         admin = require_admin(req)
     except PermissionError as exc:
