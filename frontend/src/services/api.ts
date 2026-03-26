@@ -1,13 +1,10 @@
-// @ts-ignore
-import localSettings from '../local.settings.json';
-
 // RAG function app (custom Python + PostgreSQL)
 export const API_BASE_URL = "https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api";
-export const AZURE_FUNCTION_KEY = localSettings.AZURE_FUNCTION_KEY || '';
+export const AZURE_FUNCTION_KEY = import.meta.env.VITE_AZURE_FUNCTION_KEY || '';
 
 // Agent function app (Azure AI Foundry)
 export const AGENT_API_BASE_URL = "https://nda-foundry-api-g3b0f6fjgzgjhbfx.uksouth-01.azurewebsites.net/api";
-export const AZURE_AGENT_FUNCTION_KEY = localSettings.AZURE_AGENT_FUNCTION_KEY || AZURE_FUNCTION_KEY;
+export const AZURE_AGENT_FUNCTION_KEY = import.meta.env.VITE_AZURE_AGENT_FUNCTION_KEY || AZURE_FUNCTION_KEY;
 
 export const getAuthParams = () => {
     return AZURE_FUNCTION_KEY ? `?code=${encodeURIComponent(AZURE_FUNCTION_KEY)}` : '';
