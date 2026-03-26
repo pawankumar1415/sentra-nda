@@ -1,153 +1,275 @@
 # NDA Narrative Validation System
 
-An AI-powered tool that validates NDA project reporting narratives against writing guidelines and live data movements, surfaced via Microsoft Teams.
+An AI-powered tool that validates NDA project reporting narratives against writing guidelines and live data movements.
 
 ---
 
-## How It All Works — The Dual Architecture Approach
+## The Two Approaches
 
-We are current exploring a two-pronged approach to find the best balance of flexibility and performance.
-
-### Approach 1: Custom RAG API Pipeline (`rag_function/`)
-A fully-custom, open-source backend using Azure Functions, PostgreSQL (pgvector), and the OpenAI Python SDK.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  DATA INGESTION (Triggered via Power Automate / SharePoint)                 │
-│                                                                             │
-│  1. Upload P07 Excel File ──► POST /api/ingest ─────┐                       │
-│  2. Upload EAC Excel File ──► POST /api/ingest-eac ─┴─► PostgreSQL Database │
-│                                                         (pgvector)          │
-│                                                                             │
-│  VALIDATION (Triggered by user/UI)                                          │
-│                                                                             │
-│  User / Client App ──► POST /api/validate ──► Query PostgreSQL Context      │
-│                                           ──► Evaluate via Azure OpenAI     │
-│                                           ──► Return JSON Verdict           │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Approach 2: Azure AI Foundry Agent (`agent/`)
-An AI-orchestrator approach using the Azure AI Agents SDK, where the LLM is given tools to autonomously fetch data.
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Validation Request ──► Azure AI Agent ──► Decides which tools to run       │
-│                                        ──► Calls RAG API for EAC Database   │
-│                                        ──► Builds contextual understanding  │
-│                                        ──► Applies Good Practice Guidelines │
-│                                        ──► Returns Validation Results       │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-*(Ultimately, Phase 3 will wrap the chosen approach in an Azure Bot Service to expose it to Microsoft Teams).*
+| | Custom Approach (`rag_function/`) | Foundry Approach (`agent/`) |
+|---|---|---|
+| **Backend** | Azure Functions + PostgreSQL + pgvector + OpenAI SDK | Azure Functions + Azure AI Foundry Agents SDK |
+| **Search** | pgvector cosine similarity | Azure AI Search (semantic) |
+| **Auth** | JWT (login/register, per-user data isolation) | Azure Function key only |
+| **UI** | React frontend (`frontend/`) | No UI |
+| **Memory** | PostgreSQL chat sessions | Azure AI Foundry thread memory |
+| **Status** | Primary — fully featured | Secondary — experimental |
 
 ---
 
-## Folder Structure Explained
+## Overall Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       CUSTOM APPROACH                                    │
+│                                                                          │
+│  React Frontend (frontend/)                                              │
+│    /login ──► POST /auth/register|login ──► JWT token                   │
+│    /chat   ──► POST /chat  ──► PostgreSQL sessions + GPT                │
+│    /validate ─► POST /validate ─► pgvector search + GPT                │
+│    /ingest ──► POST /ingest ──────────────────────────┐                 │
+│    /admin  ──► GET|POST /admin/users ─────┐           │                 │
+│                                           │           │                 │
+│  rag_function/ (Azure Function App)       │           │                 │
+│  ┌──────────────────────────────────────┐ │           │                 │
+│  │  auth.py  — JWT + user management   │ │           │                 │
+│  │  ingest.py — Excel → pgvector       │◄┘           │                 │
+│  │  validate.py — RAG + GPT            │             │                 │
+│  │  chat.py — conversational RAG       │             │                 │
+│  │  db.py — PostgreSQL pool            │◄────────────┘                 │
+│  └──────────────────────────────────────┘                               │
+│              │                       │                                  │
+│              ▼                       ▼                                  │
+│    Azure PostgreSQL           Azure OpenAI                              │
+│    + pgvector                 GPT + Embeddings                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                       FOUNDRY APPROACH                                   │
+│                                                                          │
+│  agent/ (Azure Function App)                                             │
+│    POST /validate ──► Azure AI Foundry Agent ──► Reason + Tools         │
+│    POST /chat     ──► Azure AI Foundry Agent ──► Thread memory          │
+│    GET /search-projects ──► Azure AI Search                             │
+│                                                                          │
+│  Resources:                                                              │
+│    Azure AI Foundry project: nda-narrative                              │
+│    CognitiveServices: movar-secure-azure-resource                       │
+│    AI Search: movar-nda-aisearch / index: nda-mppr-projects             │
+│    Knowledge base: knowledgebase114 (semantic config on index)          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Folder Structure
 
 ```
 Custom Solution/
 │
-├── Implementation Plan Documents/   ← Architecture docs and this README
-├── NDA Data/                        ← Sample Data (gitignored)
-├── test_rag.py                      ← End-to-end local test suite for RAG API
-├── debug_excel.py                   ← Excel parsing debug utility
-├── setup_db.py                      ← PostgreSQL Schema setup script
+├── Implementation Plan Documents/   ← This README + architecture docs
+├── NDA Data/                        ← Sample data (gitignored)
 │
-├── rag_function/                    ← COMPONENT 1: Custom RAG API Pipeline
-│   ├── function_app.py              ← HTTP triggers: /ingest, /ingest-eac, /validate
-│   ├── db.py                        ← PostgreSQL connection pooling
-│   ├── embedder.py                  ← Azure OpenAI Embeddings implementation
-│   ├── ingest.py                    | Excel extractors & database upserts
-│   ├── ingest_eac.py                |
-│   ├── validate.py                  ← RAG + Validation logic orchestrator
-│   ├── local.settings.json          ← Credentials for local dev (gitignored)
-│   └── requirements.txt             ← Python dependencies
+├── rag_function/                    ← CUSTOM APPROACH backend
+│   ├── function_app.py              HTTP routes (auth/admin/data)
+│   ├── auth.py                      JWT authentication + user management
+│   ├── db.py                        PostgreSQL connection pool + schema
+│   ├── embedder.py                  Azure OpenAI embeddings
+│   ├── ingest.py                    MPPR Excel parser + PGVector upsert
+│   ├── ingest_eac.py                EAC variance Excel parser + upsert
+│   ├── validate.py                  Single narrative validation pipeline
+│   ├── batch_validate.py            Batch validation pipeline
+│   ├── chat.py                      Conversational RAG pipeline
+│   ├── conversation.py              Chat session + history management
+│   ├── local.settings.json          Local credentials (gitignored)
+│   └── requirements.txt             Python dependencies
 │
-└── agent/                           ← COMPONENT 2: Azure AI Foundry Agent
-    ├── agent_runner.py              ← Main orchestrator logic
-    ├── tools.py                     ← Python tools (functions the agent can call)
-    ├── system_prompt.py             ← Good Practice guidelines
-    ├── config.py                    ← Thresholds and Agent config
-    ├── local.settings.json          ← Credentials for local dev (gitignored)
-    └── requirements.txt             ← Python dependencies
+├── frontend/                        ← CUSTOM APPROACH React UI
+│   └── src/
+│       ├── views/
+│       │   ├── LoginView.tsx        Login + Register page
+│       │   ├── AdminView.tsx        Admin user management panel
+│       │   ├── ChatView.tsx         Conversational chat
+│       │   ├── ValidateView.tsx     Individual narrative validation
+│       │   ├── BatchValidateView.tsx Batch validation
+│       │   └── IngestView.tsx       Data upload
+│       ├── components/
+│       │   ├── Sidebar.tsx          Nav + user info + logout
+│       │   └── ProtectedRoute.tsx   Auth guard (redirects to /login)
+│       ├── context/
+│       │   └── AuthContext.tsx      JWT state (token/username/is_admin)
+│       └── services/
+│           └── api.ts               All API calls with auth headers
+│
+├── agent/                           ← FOUNDRY APPROACH backend
+│   ├── function_app.py
+│   ├── agent_runner.py
+│   ├── tools.py
+│   ├── system_prompt.py
+│   └── requirements.txt
+│
+├── test_remote.py                   Remote test for custom validate endpoint
+└── test_deployment.py               Remote test for Foundry validate endpoint
 ```
 
 ---
 
-## Getting Started: The Custom RAG API Pipeline
+## Azure Resources (Post-Migration to `sellafield-dpmo-dev`)
 
-### 1. Set Up the Database
-This solution requires an **Azure Database for PostgreSQL Flexible Server** with the `pgvector` extension enabled.
+| Resource | Name | Purpose |
+|---|---|---|
+| Resource Group | `sellafield-dpmo-dev` | Container for all resources |
+| PostgreSQL Flexible Server | (configured in env vars) | Vector store + auth |
+| CognitiveServices | `movar-secure-azure-resource` | Azure OpenAI + AI Services |
+| AI Search | `movar-nda-aisearch` | Foundry knowledge base |
+| AI Search Index | `nda-mppr-projects` | MPPR project index (semantic config) |
+| Foundry Project | `nda-narrative` | Foundry agent + knowledge base |
+| Function App (Custom) | `nda-python-backend-...` | Custom RAG API |
+| Function App (Foundry) | `nda-foundry-api-...` | Foundry agent API |
 
-1. Ensure your connection strings are in `rag_function/local.settings.json`:
-   - `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-2. Run the setup script to create the schema and vector indexes:
-   ```powershell
-   venv\Scripts\python setup_db.py
-   ```
+> **Note:** `movar-secure-azure-resource` was **recreated** (not moved) during the migration. Always fetch the new API keys from Portal → Keys and Endpoint → OpenAI tab.
 
-### 2. Run Local Tests
-The test suite will check database connectivity, run the Azure OpenAI embedder, index local Excel files from the `NDA Data/` folder, and test narrative validation.
+---
+
+## Getting Started: Custom Approach
+
+### 1. Configure Credentials
+
+Fill in `rag_function/local.settings.json` — see [rag_function/README.md](../rag_function/README.md#environment-variables).
+
+Must include `JWT_SECRET` — a long random string.
+
+### 2. Install Dependencies
 
 ```powershell
-venv\Scripts\python test_rag.py
+cd rag_function
+pip install -r requirements.txt
 ```
 
-### 3. Deploy the API to Azure Functions
-1. CD into the function directory:
-   ```powershell
-   cd rag_function
-   ```
-2. Publish to your Azure Function App (e.g., `nda-python-backend`):
-   ```powershell
-   func azure functionapp publish <YOUR_FUNCTION_APP_NAME>
-   ```
-3. Sync your local settings to the cloud:
-   ```powershell
-   func azure functionapp publish <YOUR_FUNCTION_APP_NAME> --publish-settings-only
-   ```
+```powershell
+cd frontend
+npm install
+```
+
+### 3. Run Locally
+
+Backend:
+```powershell
+cd rag_function
+func start
+```
+
+Frontend:
+```powershell
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:5173` → you will land on `/login`. Register the first account (auto-admin).
+
+### 4. Test the Backend
+
+See [Testing Guide](#testing-guide) below.
+
+### 5. Deploy
+
+```powershell
+cd rag_function
+func azure functionapp publish nda-python-backend
+```
+
+Add `JWT_SECRET` in Azure Portal → Function App → Environment variables.
 
 ---
 
-## Getting Started: Azure AI Foundry Agent
+## Getting Started: Foundry Approach
 
-The agent requires an **Azure AI Foundry Project**, a connected **Azure OpenAI** model deployment, and (optionally) an **Azure AI Search** connection. 
+```powershell
+cd agent
+pip install -r requirements.txt
+func start
+```
 
-Currently, the Agent authenticates using the developer's Entra ID (`az login`) fallback. 
-
-1. Ensure your credentials are in `agent/local.settings.json`.
-2. Install the necessary SDKs:
-   ```powershell
-   venv\Scripts\pip install azure-ai-projects azure-ai-agents azure-identity
-   ```
-3. Run or debug the agent logic using:
-   ```powershell
-   venv\Scripts\python debug_agent_run.py
-   ```
-
-*(Note: For autonomous cloud execution, the Service Principal mapped to the app will require the `Azure AI Developer` and `Search Index Data Reader` role assignments).*
+Requires `AZURE_FOUNDRY_PROJECT_ENDPOINT` pointing to `https://movar-secure-azure-resource.services.ai.azure.com/api/projects/nda-narrative`.
 
 ---
 
-## The Two-Layer Validation Explained
+## Two-Layer Validation
 
-Both approaches share the same fundamental goal: validating raw periodic project narratives.
+Both approaches share the same validation logic:
 
 ### Layer 1 — Guidance & Structure
-The AI checks the narrative against the **Good Practice Reference** guidelines:
-- Is it written as flowing prose (not bullet points)?
-- Are all acronyms natively expanded on first use?
-- Are all dates written in full?
-- Are figures consistent with reported data?
+
+- Flowing prose (not bullets)
+- All required sentences present: DCA/RAG, EAC, schedule, risk/contingency, capability & capacity
+- Acronyms expanded on first use
+- Full dates (not abbreviations)
+- No building numbers, no document references
+- Cost figures match reported data
 
 ### Layer 2 — Data-Driven Movement Check
-The system cross-references the submitted text with historical baseline tracking (`lifecycle_eac_variance`).
 
-| EAC Movement | Action Required |
-|---|---|
-| < £50k | No comment required |
-| ≥ £0.1m (one decimal place) | Must be explicitly referenced |
-| ≥ £0.5m | Requires detailed rationale |
-| Any schedule slippage | Must be mentioned and explained |
+| EAC Movement | Flag | Required Action |
+|---|---|---|
+| < £50k | `none` | No comment required |
+| £50k – £0.1m | `minor` | Optional brief mention |
+| £0.1m – £0.5m | `material` | Must be explicitly explained |
+| ≥ £0.5m | `major` | Requires detailed rationale |
+| Schedule slip (positive days) | — | Must be mentioned and explained |
+
+---
+
+## Testing Guide
+
+### Remote Tests (against deployed Azure Function)
+
+**Custom approach:**
+```powershell
+python test_remote.py --key <HOST_KEY>
+```
+
+**Foundry approach:**
+```powershell
+python test_deployment.py --key <HOST_KEY>
+```
+
+### Auth Flow Test Sequence
+
+```powershell
+BASE="https://nda-python-backend-hyfdfwc2cwgzfrc6.uksouth-01.azurewebsites.net/api"
+KEY="<your-host-key>"
+
+# 1. Register first user (becomes admin)
+curl -X POST "$BASE/auth/register?code=$KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "password123"}'
+
+# 2. Login
+curl -X POST "$BASE/auth/login?code=$KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "password123"}'
+# → Copy the "token" value
+
+TOKEN="<paste token here>"
+
+# 3. List users (admin only)
+curl "$BASE/admin/users?code=$KEY" -H "Authorization: Bearer $TOKEN"
+
+# 4. Ingest data
+curl -X POST "$BASE/ingest?code=$KEY&filename=P07.xlsx" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @P07.xlsx
+
+# 5. Validate a narrative
+curl -X POST "$BASE/validate?code=$KEY" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"narrative": "The DCA remains Amber...", "project_name": "Sellafield", "period": "P07"}'
+
+# 6. Chat
+curl -X POST "$BASE/chat?code=$KEY" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Which projects are Red RAG?", "session_id": null}'
+```
