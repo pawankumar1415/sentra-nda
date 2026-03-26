@@ -17,6 +17,112 @@ export const getAgentAuthParams = () => {
     return AZURE_AGENT_FUNCTION_KEY ? `?code=${encodeURIComponent(AZURE_AGENT_FUNCTION_KEY)}` : '';
 };
 
+// ── JWT auth helpers ──────────────────────────────────────────────────────────
+
+/** Returns the stored JWT token from localStorage, or null. */
+function getStoredToken(): string | null {
+    try {
+        const raw = localStorage.getItem('nda_auth');
+        return raw ? JSON.parse(raw).token : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Returns headers that include the JWT Bearer token if available. */
+function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+    const token = getStoredToken();
+    return {
+        ...extra,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+}
+
+// ── Auth API ─────────────────────────────────────────────────────────────────
+
+export interface AuthResponse {
+    token: string;
+    username: string;
+    is_admin: boolean;
+}
+
+export const loginUser = async (username: string, password: string): Promise<AuthResponse> => {
+    const url = `${API_BASE_URL}/auth/login${getAuthParams()}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Login failed (${response.status})`);
+    }
+    return response.json();
+};
+
+export const registerUser = async (username: string, password: string): Promise<AuthResponse> => {
+    const url = `${API_BASE_URL}/auth/register${getAuthParams()}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Registration failed (${response.status})`);
+    }
+    return response.json();
+};
+
+// ── Admin API ─────────────────────────────────────────────────────────────────
+
+export interface UserRecord {
+    user_id: string;
+    username: string;
+    is_admin: boolean;
+    is_active: boolean;
+    created_at: string | null;
+    projects_count: number;
+    sessions_count: number;
+}
+
+export const listUsers = async (): Promise<UserRecord[]> => {
+    const url = `${API_BASE_URL}/admin/users${getAuthParams()}`;
+    const response = await fetch(url, { headers: authHeaders() });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Failed to list users (${response.status})`);
+    }
+    const data = await response.json();
+    return data.users;
+};
+
+export const updateUser = async (user_id: string, changes: { is_active?: boolean; is_admin?: boolean }): Promise<void> => {
+    const url = `${API_BASE_URL}/admin/users/update${getAuthParams()}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ user_id, ...changes }),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Update failed (${response.status})`);
+    }
+};
+
+export const deleteUser = async (user_id: string): Promise<void> => {
+    const url = `${API_BASE_URL}/admin/users/delete${getAuthParams()}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ user_id }),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Delete failed (${response.status})`);
+    }
+};
+
 export interface ValidateRequest {
     narrative: string;
     project_name: string;
@@ -28,9 +134,7 @@ export const validateNarrative = async (data: ValidateRequest) => {
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             narrative: data.narrative,
             project_name: data.project_name,
@@ -59,9 +163,7 @@ export const ingestFile = async (file: File, type: 'mppr' | 'eac') => {
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/octet-stream',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/octet-stream' }),
         body: file,
     });
 
@@ -123,9 +225,7 @@ export const sendChatMessage = async (
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
             question,
             session_id: sessionId,   // null on first message → server creates session
@@ -160,9 +260,7 @@ export const listProjects = async (file: File): Promise<ListProjectsResponse> =>
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/octet-stream',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/octet-stream' }),
         body: file,
     });
 
@@ -193,7 +291,7 @@ export const searchProjects = async (query: string, limit = 20): Promise<Searche
     params.append('limit', String(limit));
 
     const url = `${API_BASE_URL}/search-projects?${params.toString()}`;
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: authHeaders() });
     if (!response.ok) return [];
     const data = await response.json();
     return data.projects || [];
@@ -264,9 +362,7 @@ export const batchValidate = async (file: File) => {
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/octet-stream',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/octet-stream' }),
         body: file,
     });
 
