@@ -177,8 +177,20 @@ CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
 
 # Run on every cold-start to migrate existing deployments that pre-date auth.
 _MIGRATION_SQL = """
-ALTER TABLE nda_projects     ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
-ALTER TABLE chat_sessions    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE nda_projects  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+
+-- nda_eac_variance changed from PK(project_name) to PK(project_name, user_id).
+-- If the old schema is present (no user_id column), drop and let CREATE TABLE rebuild it.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'nda_eac_variance' AND column_name = 'user_id'
+    ) THEN
+        DROP TABLE IF EXISTS nda_eac_variance;
+    END IF;
+END $$;
 """
 
 
