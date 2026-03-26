@@ -8,14 +8,15 @@ AI-powered tool for validating NDA project narrative reports against formatting 
 
 The system provides **two independent validation approaches** that can be used side-by-side:
 
-| | RAG Approach | AI Foundry Agent Approach |
+| | Custom Approach (`rag_function/`) | Foundry Approach (`agent/`) |
 |---|---|---|
 | **Folder** | `rag_function/` | `agent/` |
 | **Function App** | `nda-python-backend` | `nda-foundry-api` |
 | **AI Backend** | Azure OpenAI (GPT) + PGVector | Azure AI Foundry Agent |
+| **Auth** | JWT login/register, per-user data isolation | Azure Function host key only |
 | **Validation Output** | Structured JSON (scores, issues, rewrite) | Free-form agent analysis |
-| **Memory** | PostgreSQL session history | Azure Blob Storage conversation blobs |
-| **Search** | PGVector semantic search | Azure AI Search |
+| **Memory** | PostgreSQL session history (per user) | Azure Blob Storage conversation blobs |
+| **Search** | PGVector cosine similarity | Azure AI Search (semantic) |
 | **Long-term Memory** | — | Foundry Memory Store (Preview) |
 
 ```
@@ -42,40 +43,60 @@ RAG Function App    Agent Function App
 ## Project Structure
 
 ```
-├── rag_function/           # Custom Python RAG approach
-│   ├── function_app.py     # Azure Functions entry point
-│   ├── db.py               # PostgreSQL + pgvector connection
-│   ├── ingest.py           # MPPR Excel parser + embedder
-│   ├── validate.py         # Single narrative validation
-│   ├── batch_validate.py   # Batch validation pipeline
-│   ├── chat.py             # Conversational RAG with session memory
-│   ├── conversation.py     # PostgreSQL session management
-│   ├── embedder.py         # Azure OpenAI embedding wrapper
-│   └── local.settings.json # Dev config (gitignored)
+├── rag_function/                   # Custom RAG approach (Python)
+│   ├── function_app.py             # All HTTP routes (auth/admin/data)
+│   ├── auth.py                     # JWT authentication + user management
+│   ├── db.py                       # PostgreSQL + pgvector pool + schema bootstrap
+│   ├── embedder.py                 # Azure OpenAI embedding wrapper
+│   ├── ingest.py                   # MPPR Excel parser + PGVector upsert (per-user)
+│   ├── ingest_eac.py               # EAC variance Excel parser + upsert (per-user)
+│   ├── validate.py                 # Single narrative validation pipeline
+│   ├── batch_validate.py           # Batch validation pipeline
+│   ├── chat.py                     # Conversational RAG pipeline (per-user)
+│   ├── conversation.py             # PostgreSQL chat session + history management
+│   ├── requirements.txt            # Python dependencies (includes PyJWT)
+│   └── local.settings.json         # Dev credentials (gitignored)
 │
-├── agent/                  # Azure AI Foundry Agent approach
-│   ├── function_app.py     # Azure Functions entry point
-│   ├── agent_runner.py     # Foundry agent execution + blob memory
-│   ├── batch_validate.py   # Batch validation for Foundry agent
-│   ├── tools.py            # EAC/schedule tool functions
-│   ├── system_prompt.py    # Agent system prompt
-│   ├── ingest_helper.py    # AI Search indexing
-│   ├── config.py           # Centralised configuration
-│   ├── setup_memory.py     # Foundry Memory Store setup CLI
-│   └── local.settings.json # Dev config (gitignored)
+├── agent/                          # Foundry approach (Python)
+│   ├── function_app.py             # Azure Functions entry point
+│   ├── agent_runner.py             # Foundry agent execution + blob memory
+│   ├── batch_validate.py           # Batch validation for Foundry agent
+│   ├── chat.py                     # Conversational chat via Foundry agent
+│   ├── tools.py                    # EAC/schedule tool functions
+│   ├── system_prompt.py            # Agent system prompt
+│   ├── ingest_helper.py            # AI Search indexing
+│   ├── config.py                   # Centralised configuration
+│   ├── setup_memory.py             # Foundry Memory Store setup CLI
+│   └── local.settings.json         # Dev credentials (gitignored)
 │
-├── frontend/               # React + TypeScript UI
+├── frontend/                       # React + TypeScript UI (Custom approach)
 │   └── src/
+│       ├── context/
+│       │   └── AuthContext.tsx     # JWT state (token/username/is_admin) in localStorage
+│       ├── components/
+│       │   ├── Sidebar.tsx         # Nav + logged-in user + logout + admin link
+│       │   └── ProtectedRoute.tsx  # Redirects to /login if unauthenticated
 │       ├── views/
-│       │   ├── ChatView.tsx          # Conversational RAG assistant
-│       │   ├── ValidateView.tsx      # Single narrative validation + project search
+│       │   ├── LoginView.tsx       # Sign in / Register (tab switcher)
+│       │   ├── AdminView.tsx       # User management table (admin only)
+│       │   ├── ChatView.tsx        # Conversational RAG assistant
+│       │   ├── ValidateView.tsx    # Single narrative validation + project search
 │       │   ├── BatchValidateView.tsx # Batch validation (RAG or Agent mode)
-│       │   └── IngestView.tsx        # Data upload (MPPR + EAC)
+│       │   └── IngestView.tsx      # Data upload (MPPR + EAC)
 │       └── services/
-│           └── api.ts                # API client for both backends
+│           └── api.ts              # All API calls with JWT auth header
 │
-├── test_conversation_memory.py  # RAG memory integration tests
-├── test_agent_memory.py         # Agent memory unit + remote tests
+├── test_remote.py               # Remote smoke test for custom validate endpoint
+├── test_deployment.py           # Remote smoke test for Foundry validate endpoint
+├── test_local.py                # Local unit tests
+├── test_rag.py                  # End-to-end RAG pipeline test
+├── test_e2e.py                  # End-to-end test suite
+├── test_agent.py                # Agent integration tests
+├── debug_agent_run.py           # Debug script for Foundry agent execution
+├── debug_agent_permissions.py   # RBAC/permissions check for Foundry agent
+├── setup_db.py                  # One-time PostgreSQL schema setup script
+├── ingest_files.py              # Bulk local ingest utility
+├── clean_mppr_data.py           # MPPR data cleaning utility
 └── README.md
 ```
 
@@ -85,15 +106,34 @@ RAG Function App    Agent Function App
 
 ### RAG Function App (`nda-python-backend`)
 
+All data routes require `Authorization: Bearer <token>`. Admin routes additionally require an admin account.
+
+**Auth (public)**
+
 | Method | Route | Description |
 |--------|-------|-------------|
-| POST | `/api/ingest` | Upload MPPR Excel → embed → store in PGVector |
-| POST | `/api/ingest-eac` | Upload EAC variance Excel → Azure Blob Storage |
+| POST | `/api/auth/register` | Create account — first user is auto-admin |
+| POST | `/api/auth/login` | Returns JWT token (8-hour expiry) |
+
+**Admin (admin JWT required)**
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET  | `/api/admin/users` | List all users with stats |
+| POST | `/api/admin/users/update` | Toggle `is_active` or `is_admin` flag |
+| POST | `/api/admin/users/delete` | Delete user and all their data |
+
+**Data (auth JWT required)**
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| POST | `/api/ingest` | Upload MPPR Excel → embed → store in PGVector (per-user) |
+| POST | `/api/ingest-eac` | Upload EAC variance Excel → store in PostgreSQL (per-user) |
 | POST | `/api/validate` | Validate single narrative (structured JSON result) |
-| POST | `/api/chat` | Conversational RAG with PostgreSQL session memory |
+| POST | `/api/chat` | Conversational RAG with PostgreSQL session memory (per-user) |
 | POST | `/api/list-projects` | Extract project list from Excel (no DB write) |
 | POST | `/api/batch-validate` | Validate all narratives in an Excel file |
-| GET  | `/api/search-projects?q=<term>` | Search indexed projects by name |
+| GET  | `/api/search-projects?q=<term>` | Search user's indexed projects by name |
 
 ### Agent Function App (`nda-foundry-api`)
 
@@ -109,10 +149,10 @@ RAG Function App    Agent Function App
 ## Conversation Memory
 
 ### RAG Function — PostgreSQL Session Memory
-- First `/api/chat` call creates a session UUID (returned to client)
+- First `/api/chat` call creates a session UUID scoped to the logged-in user
 - Client stores UUID in `localStorage` and sends it on subsequent calls
-- PostgreSQL `chat_sessions` + `chat_messages` tables store history
-- Last 20 messages are loaded per call
+- PostgreSQL `chat_sessions` + `chat_messages` tables store full history
+- Last 20 messages are loaded per LLM call; full history retained for audit
 
 ### Agent Function — Azure Blob Storage Conversation Memory
 - First `/api/validate` call generates a UUID conversation ID
@@ -130,16 +170,22 @@ RAG Function App    Agent Function App
 
 ## Frontend Features
 
+### Login / Register (`/login`)
+- Public page — only entry point without a token
+- Tab switcher between Sign In and Register
+- First registered account is automatically admin
+- Token stored in `localStorage`, survives page refresh
+
 ### Chat (`/chat`)
 - Conversational interface backed by the RAG function
-- Session persistence via `localStorage` (survives page refresh)
+- Session history persisted in PostgreSQL (scoped to logged-in user)
 - "New Conversation" button to clear history
 
 ### Individual Narrative Validation (`/validate`)
 - Upload MPPR Excel to auto-populate project list
 - **Wild search**: type in the project name field to search projects already indexed in PGVector — no Excel upload needed
 - Structured validation result: compliance score, Layer 1 (format) + Layer 2 (data) issues
-- AI rewritten narrative with diff view
+- AI rewritten narrative
 
 ### Batch Validation (`/batch-validate`)
 - Upload MPPR Excel to validate all projects at once
@@ -148,8 +194,14 @@ RAG Function App    Agent Function App
 - Export results to Excel
 
 ### Data Ingest (`/ingest`)
-- Upload MPPR Excel to index into both PGVector and AI Search
-- Upload EAC variance Excel to update financial reference data
+- Upload MPPR Excel to index into PGVector (data scoped to your account)
+- Upload EAC variance Excel to update your financial reference data
+
+### Admin Panel (`/admin` — admin only)
+- User management table: all registered users with project and session counts
+- Toggle active/inactive status per user
+- Toggle admin rights per user
+- Delete user and all associated data
 
 ---
 
@@ -168,7 +220,7 @@ RAG Function App    Agent Function App
 **RAG function:**
 ```bash
 cd rag_function
-cp local.settings.json.example local.settings.json  # fill in real values
+# Fill in local.settings.json with real values including JWT_SECRET
 pip install -r requirements.txt
 func start
 ```
@@ -176,8 +228,8 @@ func start
 **Agent function:**
 ```bash
 cd agent
-cp local.settings.json.example local.settings.json  # fill in real values
-python setup_memory.py list                          # verify Memory Store
+# Fill in local.settings.json with real values
+python setup_memory.py list   # verify Memory Store
 func start
 ```
 
@@ -187,6 +239,8 @@ cd frontend
 npm install
 # Create frontend/src/local.settings.json with AZURE_FUNCTION_KEY
 npm run dev
+# Opens at http://localhost:5173 → redirects to /login
+# Register the first account → it becomes admin automatically
 ```
 
 ### Deployment
@@ -223,9 +277,11 @@ Both function apps read all settings from environment variables. In local dev th
 | `POSTGRES_USER` | DB user (Entra ID email or username) |
 | `POSTGRES_PASSWORD` | DB password (leave empty for Managed Identity) |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI resource URL |
+| `AZURE_OPENAI_API_KEY` | Azure OpenAI API key |
 | `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Embedding model deployment name |
+| `AZURE_OPENAI_EMBEDDING_DIMS` | Embedding dimensions (e.g. `3072` for text-embedding-3-large) |
 | `AZURE_OPENAI_CHAT_DEPLOYMENT` | Chat model deployment name |
-| `AZURE_STORAGE_ACCOUNT_URL` | Blob storage URL for EAC data |
+| `JWT_SECRET` | Random secret for signing JWT tokens — **required for auth to work** |
 
 ### Key settings — Agent function
 
