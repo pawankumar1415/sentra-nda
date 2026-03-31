@@ -26,6 +26,7 @@ from openai import AzureOpenAI
 
 from db import DBConnection
 from embedder import embed
+from guidance_loader import get_guidance_text
 
 logger = logging.getLogger(__name__)
 
@@ -159,15 +160,11 @@ def _retrieve(query_vector: List[float], project_name: Optional[str], top_k: int
 
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
-_SYSTEM_PROMPT = """You are the NDA Narrative Validation Agent. You validate project narrative text
+_SYSTEM_PROMPT_TEMPLATE = """You are the NDA Narrative Validation Agent. You validate project narrative text
 for NDA portfolio reporting using two layers:
 
 LAYER 1 — GUIDANCE & STRUCTURE: Check the narrative against Good Practice rules:
-- Must read as flowing prose (not bullet points)
-- Must include: DCA/RAG status sentence, benefit milestone sentence, EAC sentence, schedule sentence, 
-  contingency/risk sentence, baseline RAG sentence, highlights sentence, Capability & Capacity RAG sentence
-- Acronyms expanded on first use; dates written in full; no building numbers; no document references
-- Cost figures must match reported data
+{guidance}
 
 LAYER 2 — DATA VALIDATION: Check if material movements are explained:
 - EAC movement ≥ £0.1m (flag=material/major) → must be explained in narrative
@@ -175,21 +172,21 @@ LAYER 2 — DATA VALIDATION: Check if material movements are explained:
 - RAG change → must be acknowledged with reason
 
 Always respond in this exact JSON format:
-{
-  "layer1": {
+{{
+  "layer1": {{
     "compliance_score": <int 0-10>,
     "issues": [<list of specific issues found>],
     "passed": [<list of rules that were met>]
-  },
-  "layer2": {
+  }},
+  "layer2": {{
     "eac_explained": <true|false|"not_applicable">,
     "schedule_explained": <true|false|"not_applicable">,
     "data_flag": <"none"|"minor"|"material"|"major">,
     "issues": [<list of data movement issues not addressed>]
-  },
+  }},
   "rewritten_narrative": <"A complete, fully rewritten version of the narrative that fixes all issues and reads perfectly as a single paragraph.">,
   "overall_verdict": <"PASS"|"PASS_WITH_WARNINGS"|"FAIL">
-}"""
+}}"""
 
 
 def _build_user_message(
@@ -252,13 +249,15 @@ def run_validate(
 
     # 4 — call GPT
     user_message = _build_user_message(narrative, project_name, chunks, eac_data)
+    guidance_text, guidance_source = get_guidance_text()
+    system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(guidance=guidance_text)
 
     gpt = _get_gpt_client()
     try:
         resp = gpt.chat.completions.create(
             model=_chat_deployment(),
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_message},
             ],
             temperature=1,      # gpt-5.1-chat only supports default temperature (1)
@@ -286,11 +285,12 @@ def run_validate(
 
     # Attach metadata
     result["_meta"] = {
-        "project_name":   project_name,
-        "period":         period,
-        "chunks_used":    len(chunks),
-        "eac_flag":       eac_data["flag"],
-        "eac_variance_m": round(eac_data["eac_variance"] / 1_000_000, 3),
-        "schedule_days":  eac_data["schedule_days"],
+        "project_name":    project_name,
+        "period":          period,
+        "chunks_used":     len(chunks),
+        "eac_flag":        eac_data["flag"],
+        "eac_variance_m":  round(eac_data["eac_variance"] / 1_000_000, 3),
+        "schedule_days":   eac_data["schedule_days"],
+        "guidance_source": guidance_source,
     }
     return result

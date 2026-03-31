@@ -13,9 +13,12 @@ Routes:
     POST /api/ingest-eac          — Upload EAC variance Excel              [auth]
     POST /api/validate            — Validate single narrative              [auth]
     POST /api/chat                — Conversational RAG with session memory [auth]
-    POST /api/list-projects       — Extract project list from Excel        [auth]
-    GET  /api/search-projects     — Fuzzy search indexed project names     [auth]
-    POST /api/batch-validate      — Validate every narrative in an Excel   [auth]
+    POST /api/list-projects              — Extract project list from Excel        [auth]
+    GET  /api/search-projects            — Fuzzy search indexed project names     [auth]
+    POST /api/batch-validate             — Validate every narrative in an Excel   [auth]
+
+    GET  /api/sharepoint/files           — List Excel files from SharePoint list  [auth]
+    POST /api/sharepoint/list-projects   — Download SP file, extract project list [auth]
 """
 
 import json
@@ -34,6 +37,7 @@ from ingest_eac import run_ingest_eac
 from validate import run_validate
 from batch_validate import run_batch_validate
 from chat import run_chat
+from sharepoint_client import list_files as sp_list_files, download_file as sp_download_file
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +379,56 @@ def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logger.exception("search-projects failed: %s", exc)
         return _err("Internal error", 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SHAREPOINT ROUTES  (require valid JWT)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route(route="sharepoint/files", methods=["GET"])
+def sharepoint_files(req: func.HttpRequest) -> func.HttpResponse:
+    """GET /api/sharepoint/files — List Excel files from configured SharePoint drive folder."""
+    try:
+        require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
+
+    try:
+        files = sp_list_files()
+        return _ok({"files": files})
+    except ValueError as exc:
+        return _err(str(exc), 500)
+    except Exception as exc:
+        logger.exception("sharepoint/files failed: %s", exc)
+        return _err("Failed to list SharePoint files.", 500)
+
+
+@app.route(route="sharepoint/list-projects", methods=["POST"])
+def sharepoint_list_projects(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/sharepoint/list-projects — Download SharePoint file, extract project list."""
+    try:
+        require_auth(req)
+    except PermissionError as exc:
+        return _err(str(exc), 401)
+
+    try:
+        body = req.get_json()
+    except ValueError:
+        return _err("Request body must be valid JSON", 400)
+
+    file_id = body.get("file_id", "").strip()
+    if not file_id:
+        return _err("'file_id' is required", 400)
+
+    try:
+        file_bytes = sp_download_file(file_id)
+        result     = list_projects_from_bytes(file_bytes)
+        return _ok(result)
+    except ValueError as exc:
+        return _err(str(exc), 400)
+    except Exception as exc:
+        logger.exception("sharepoint/list-projects failed: %s", exc)
+        return _err("Failed to load projects from SharePoint file.", 500)
 
 
 @app.route(route="batch-validate", methods=["POST"])
