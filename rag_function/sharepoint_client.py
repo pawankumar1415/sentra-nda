@@ -88,69 +88,60 @@ def _get_list_name() -> str:
     return name
 
 
-def _get_drive_id(site_id: str, token: str) -> str:
-    """Get the drive ID for the configured SharePoint list/library."""
+def _get_list_id(site_id: str, token: str) -> str:
+    """Resolve the list name to its internal GUID."""
     list_name = urllib.parse.quote(_get_list_name())
-
-    # Get the list's internal ID first
-    list_data = _graph_get(
-        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id,name,list", token
+    data = _graph_get(
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id", token
     )
-    logger.info("sharepoint_client: list_data response: %s", json.dumps(list_data))
-    list_id = list_data["id"]
-
-    # Then get the drive attached to that list
-    drive_data = _graph_get(
-        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive", token
-    )
-    logger.info("sharepoint_client: drive_data response: %s", json.dumps(drive_data))
-
-    # Handle both direct id and wrapped responses
-    if "id" in drive_data:
-        return drive_data["id"]
-    if "value" in drive_data and len(drive_data["value"]) > 0:
-        return drive_data["value"][0]["id"]
-
-    raise ValueError(
-        f"Could not find drive ID in response. Full response: {json.dumps(drive_data)}"
-    )
+    return data["id"]
 
 
 def list_files() -> List[Dict[str, str]]:
     """
-    List Excel files from the configured SharePoint list/library.
+    List Excel files from the configured SharePoint generic list.
+
+    SentraFileStaging is a generic list — files are stored as item attachments.
+    Walks all list items and collects Excel attachments.
 
     Returns a list of dicts:
         { file_id, name, last_modified, web_url }
 
-    file_id is the drive item ID — pass it back to download_file().
+    file_id encodes both the item ID and attachment ID as "itemId::attachmentId"
+    so download_file() can retrieve it without an extra lookup.
     """
-    token    = _get_token()
-    site_id  = _get_site_id(token)
-    drive_id = _get_drive_id(site_id, token)
+    token   = _get_token()
+    site_id = _get_site_id(token)
+    list_id = _get_list_id(site_id, token)
 
-    # List files from the drive root
-    url  = f"{_GRAPH_BASE}/drives/{drive_id}/root/children?$select=id,name,lastModifiedDateTime,webUrl,file"
-    data  = _graph_get(url, token)
-    items = data.get("value", [])
+    # Get all list items
+    items_url = f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/items?$select=id,lastModifiedDateTime,webUrl"
+    items_data = _graph_get(items_url, token)
+    items = items_data.get("value", [])
 
     files = []
     for item in items:
-        # Skip folders and non-Excel files
-        if "file" not in item:
+        item_id = item["id"]
+        att_url = f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/items/{item_id}/attachments"
+        try:
+            att_data = _graph_get(att_url, token)
+        except Exception as exc:
+            logger.warning("sharepoint_client: could not get attachments for item %s: %s", item_id, exc)
             continue
-        name = item.get("name", "")
-        if not (name.endswith(".xlsx") or name.endswith(".xls")):
-            continue
-        files.append({
-            "file_id":       item["id"],
-            "name":          name,
-            "last_modified": item.get("lastModifiedDateTime", ""),
-            "web_url":       item.get("webUrl", ""),
-        })
+
+        for att in att_data.get("value", []):
+            name = att.get("name", "")
+            if not (name.endswith(".xlsx") or name.endswith(".xls")):
+                continue
+            files.append({
+                "file_id":       f"{item_id}::{att['id']}",
+                "name":          name,
+                "last_modified": item.get("lastModifiedDateTime", ""),
+                "web_url":       item.get("webUrl", ""),
+            })
 
     logger.info(
-        "sharepoint_client: listed %d Excel file(s) from '%s'",
+        "sharepoint_client: listed %d Excel attachment(s) from list '%s'",
         len(files), os.environ.get("SHAREPOINT_LIST_NAME", ""),
     )
     return files
@@ -158,21 +149,22 @@ def list_files() -> List[Dict[str, str]]:
 
 def download_file(file_id: str) -> bytes:
     """
-    Download a file from SharePoint by its drive item ID.
+    Download an attachment from a SharePoint list item.
 
-    Returns raw bytes suitable for passing to list_projects_from_bytes().
+    file_id must be in the format "itemId::attachmentId" as returned by list_files().
     """
-    if not file_id:
-        raise ValueError("file_id must not be empty.")
+    if not file_id or "::" not in file_id:
+        raise ValueError("file_id must be in 'itemId::attachmentId' format.")
 
-    token    = _get_token()
-    site_id  = _get_site_id(token)
-    drive_id = _get_drive_id(site_id, token)
+    item_id, att_id = file_id.split("::", 1)
+    token   = _get_token()
+    site_id = _get_site_id(token)
+    list_id = _get_list_id(site_id, token)
 
-    url = f"{_GRAPH_BASE}/drives/{drive_id}/items/{file_id}/content"
+    url = f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/items/{item_id}/attachments/{att_id}/$value"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req) as resp:
         data = resp.read()
 
-    logger.info("sharepoint_client: downloaded %d bytes for item %s", len(data), file_id)
+    logger.info("sharepoint_client: downloaded %d bytes for attachment %s", len(data), att_id)
     return data
