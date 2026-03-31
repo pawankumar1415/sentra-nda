@@ -88,47 +88,56 @@ def _get_list_name() -> str:
     return name
 
 
+def _get_drive_id(site_id: str, token: str) -> str:
+    """Get the drive ID for the configured SharePoint list/library."""
+    list_name = urllib.parse.quote(_get_list_name())
+    # Get the list's internal ID first
+    list_data = _graph_get(
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id", token
+    )
+    list_id = list_data["id"]
+    # Then get the drive attached to that list
+    drive_data = _graph_get(
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive?$select=id", token
+    )
+    return drive_data["id"]
+
+
 def list_files() -> List[Dict[str, str]]:
     """
-    List Excel files from the configured SharePoint list.
+    List Excel files from the configured SharePoint list/library.
 
     Returns a list of dicts:
         { file_id, name, last_modified, web_url }
 
-    file_id is the list item ID — pass it back to download_file().
+    file_id is the drive item ID — pass it back to download_file().
     """
-    token     = _get_token()
-    site_id   = _get_site_id(token)
-    list_name = urllib.parse.quote(_get_list_name())
+    token    = _get_token()
+    site_id  = _get_site_id(token)
+    drive_id = _get_drive_id(site_id, token)
 
-    # Expand driveItem to get file metadata; filter to Excel files only
-    url = (
-        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}/items"
-        f"?$expand=driveItem($select=id,name,lastModifiedDateTime,webUrl,file)"
-        f"&$select=id"
-    )
+    # List files from the drive root
+    url  = f"{_GRAPH_BASE}/drives/{drive_id}/root/children?$select=id,name,lastModifiedDateTime,webUrl,file"
     data  = _graph_get(url, token)
     items = data.get("value", [])
 
     files = []
     for item in items:
-        drive_item = item.get("driveItem")
-        if not drive_item:
+        # Skip folders and non-Excel files
+        if "file" not in item:
             continue
-        # Only include Excel files
-        name = drive_item.get("name", "")
+        name = item.get("name", "")
         if not (name.endswith(".xlsx") or name.endswith(".xls")):
             continue
-        # Use driveItem id for downloading — it works with /drives/.../items/.../content
         files.append({
-            "file_id":       drive_item["id"],
+            "file_id":       item["id"],
             "name":          name,
-            "last_modified": drive_item.get("lastModifiedDateTime", ""),
-            "web_url":       drive_item.get("webUrl", ""),
+            "last_modified": item.get("lastModifiedDateTime", ""),
+            "web_url":       item.get("webUrl", ""),
         })
 
     logger.info(
-        "sharepoint_client: listed %d Excel file(s) from list '%s'",
+        "sharepoint_client: listed %d Excel file(s) from '%s'",
         len(files), os.environ.get("SHAREPOINT_LIST_NAME", ""),
     )
     return files
@@ -136,26 +145,17 @@ def list_files() -> List[Dict[str, str]]:
 
 def download_file(file_id: str) -> bytes:
     """
-    Download a file from SharePoint by its driveItem ID.
+    Download a file from SharePoint by its drive item ID.
 
     Returns raw bytes suitable for passing to list_projects_from_bytes().
     """
     if not file_id:
         raise ValueError("file_id must not be empty.")
 
-    token   = _get_token()
-    site_id = _get_site_id(token)
+    token    = _get_token()
+    site_id  = _get_site_id(token)
+    drive_id = _get_drive_id(site_id, token)
 
-    # Get the drive associated with this list so we can use the drive download endpoint
-    list_name = urllib.parse.quote(_get_list_name())
-    list_data = _graph_get(f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id", token)
-    list_id   = list_data["id"]
-
-    # Get the drive for this list
-    drives_data = _graph_get(f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive?$select=id", token)
-    drive_id    = drives_data["id"]
-
-    # Download file content — Graph follows the redirect automatically via urllib
     url = f"{_GRAPH_BASE}/drives/{drive_id}/items/{file_id}/content"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req) as resp:
