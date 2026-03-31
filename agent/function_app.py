@@ -167,6 +167,56 @@ def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /api/list-projects
+# Body: raw binary (octet-stream) MPPR .xlsx file
+# Query params: filename (optional, used for period extraction)
+#
+# Response:
+#   {
+#     "period":   "P07",
+#     "projects": [
+#       {"project_name": "Dounreay Shaft", "narrative_text": "..."},
+#       ...
+#     ]
+#   }
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="list-projects", methods=["POST"])
+def list_projects(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    Parse an uploaded MPPR Excel and return all project names + narratives.
+    No AI calls — pure Excel parsing for populating dropdowns in the frontend.
+    """
+    logger.info("list-projects triggered.")
+
+    file_bytes = req.get_body()
+    filename   = req.params.get("filename", "")
+
+    if not file_bytes:
+        return func.HttpResponse(
+            json.dumps({"error": "No file provided. Send Excel as raw body."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        from batch_validate import parse_excel
+        period, projects = parse_excel(file_bytes, filename=filename)
+    except Exception as exc:
+        logger.exception("list-projects: Excel parse failed.")
+        return func.HttpResponse(
+            json.dumps({"error": f"Failed to parse Excel: {exc}"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    return func.HttpResponse(
+        json.dumps({"period": period, "projects": projects}),
+        status_code=200,
+        mimetype="application/json",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /api/validate
 # Body: application/json
 #   {
