@@ -56,6 +56,53 @@ flowchart TD
 
 ---
 
+## Approach 3 — Custom RAG + React Frontend (Current Production System)
+
+**Selected path:**
+`SharePoint List / Local Upload` → `React Frontend` → `Azure Function /api/*` → `PostgreSQL + pgvector` → `GPT` → `React Frontend`
+
+```mermaid
+flowchart LR
+    SP["SharePoint\nMPPR Files"]
+    LU["Local Upload\nMPPR Excel"]
+
+    subgraph FA["Azure Function App (Python)"]
+        INGEST["File Processor"]
+        VAL["Validator"]
+        CHAT["Chat Assistant"]
+    end
+
+    subgraph STORE["Storage"]
+        PG[("Project Database\n+ Vector Search")]
+        BLOB["Guidance Document"]
+    end
+
+    GPT["Azure OpenAI\nGPT"]
+    UI["React Web App\nAzure Static Web Apps"]
+
+    SP -->|"reads files"| INGEST
+    LU -->|"upload"| INGEST
+    INGEST -->|"stores projects"| PG
+    UI -->|"submit narrative"| VAL
+    BLOB -->|"good practice rules"| VAL
+    PG -->|"similar projects + EAC data"| VAL
+    VAL -->|"prompt"| GPT
+    GPT -->|"validation result"| UI
+    UI -->|"ask question"| CHAT
+    PG -->|"portfolio data"| CHAT
+    CHAT -->|"prompt"| GPT
+    GPT -->|"answer"| UI
+
+    style SP fill:#0078d4,color:#fff
+    style LU fill:#0078d4,color:#fff
+    style UI fill:#20b2aa,color:#fff
+    style PG fill:#6a2d9f,color:#fff
+    style GPT fill:#2d9f6a,color:#fff
+    style BLOB fill:#e8a020,color:#fff
+```
+
+---
+
 ## Side-by-Side Comparison
 
 | | Approach 1 — Foundry Agent | Approach 2 — Open-Source RAG |

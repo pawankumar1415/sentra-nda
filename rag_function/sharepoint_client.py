@@ -39,25 +39,43 @@ def _get_token() -> str:
     return credential.get_token(_GRAPH_SCOPE).token
 
 
-def _graph_get(path: str, token: str) -> Any:
-    """GET a Microsoft Graph endpoint and return parsed JSON."""
-    url = f"{_GRAPH_BASE}{path}"
+def _graph_get(url: str, token: str) -> Any:
+    """GET a full Microsoft Graph URL and return parsed JSON."""
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(req) as resp:
         return json.loads(resp.read().decode())
 
 
 def _get_site_id(token: str) -> str:
-    """Resolve the site URL to a Graph site ID, cached after first call."""
+    """
+    Resolve SharePoint site to a Graph site ID, cached after first call.
+
+    Checks SHAREPOINT_SITE_ID first (direct ID, skips lookup).
+    Falls back to resolving via SHAREPOINT_SITE_URL using the
+    hostname:/sites/path syntax required by Microsoft Graph.
+    """
     global _cached_site_id
     if _cached_site_id:
         return _cached_site_id
 
+    # Prefer direct site ID if provided — skips the lookup entirely
+    direct_id = os.environ.get("SHAREPOINT_SITE_ID", "").strip()
+    if direct_id:
+        _cached_site_id = direct_id
+        logger.info("sharepoint_client: using SHAREPOINT_SITE_ID directly: %s", direct_id)
+        return _cached_site_id
+
     site_url = os.environ.get("SHAREPOINT_SITE_URL", "").strip()
     if not site_url:
-        raise ValueError("SHAREPOINT_SITE_URL environment variable is not set.")
+        raise ValueError(
+            "Either SHAREPOINT_SITE_ID or SHAREPOINT_SITE_URL environment variable must be set."
+        )
 
-    data = _graph_get(f"/sites/{site_url}", token)
+    # Build the URL manually — urllib.parse.urlencode would encode the colon
+    # in hostname:/path which breaks the Graph hostname:path syntax
+    full_url = f"{_GRAPH_BASE}/sites/{site_url}"
+    logger.info("sharepoint_client: resolving site via %s", full_url)
+    data = _graph_get(full_url, token)
     _cached_site_id = data["id"]
     logger.info("sharepoint_client: resolved site '%s' → id=%s", site_url, _cached_site_id)
     return _cached_site_id
@@ -84,12 +102,12 @@ def list_files() -> List[Dict[str, str]]:
     list_name = urllib.parse.quote(_get_list_name())
 
     # Expand driveItem to get file metadata; filter to Excel files only
-    path = (
-        f"/sites/{site_id}/lists/{list_name}/items"
+    url = (
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}/items"
         f"?$expand=driveItem($select=id,name,lastModifiedDateTime,webUrl,file)"
         f"&$select=id"
     )
-    data  = _graph_get(path, token)
+    data  = _graph_get(url, token)
     items = data.get("value", [])
 
     files = []
@@ -130,11 +148,11 @@ def download_file(file_id: str) -> bytes:
 
     # Get the drive associated with this list so we can use the drive download endpoint
     list_name = urllib.parse.quote(_get_list_name())
-    list_data = _graph_get(f"/sites/{site_id}/lists/{list_name}?$select=id", token)
+    list_data = _graph_get(f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id", token)
     list_id   = list_data["id"]
 
     # Get the drive for this list
-    drives_data = _graph_get(f"/sites/{site_id}/lists/{list_id}/drive?$select=id", token)
+    drives_data = _graph_get(f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive?$select=id", token)
     drive_id    = drives_data["id"]
 
     # Download file content — Graph follows the redirect automatically via urllib
