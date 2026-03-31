@@ -269,6 +269,38 @@ export const listProjects = async (file: File): Promise<ListProjectsResponse> =>
     return response.json();
 };
 
+export interface SharePointFile {
+    file_id: string;
+    name: string;
+    last_modified: string;
+    web_url: string;
+}
+
+export const listSharePointFiles = async (): Promise<SharePointFile[]> => {
+    const url = `${API_BASE_URL}/sharepoint/files${getAuthParams()}`;
+    const response = await fetch(url, { headers: authHeaders() });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to list SharePoint files (${response.status}): ${errorText}`);
+    }
+    const data = await response.json();
+    return data.files;
+};
+
+export const listProjectsFromSharePoint = async (fileId: string): Promise<ListProjectsResponse> => {
+    const url = `${API_BASE_URL}/sharepoint/list-projects${getAuthParams()}`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ file_id: fileId }),
+    });
+    if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to load projects from SharePoint (${response.status}): ${errorText}`);
+    }
+    return response.json();
+};
+
 export interface SearchedProject {
     project_name: string;
     period_short_name: string;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X, Download } from 'lucide-react';
-import { listProjects, validateNarrative } from '../services/api';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X, Download, Share2 } from 'lucide-react';
+import { listProjects, validateNarrative, listSharePointFiles, listProjectsFromSharePoint, type SharePointFile } from '../services/api';
 import * as XLSX from 'xlsx';
 
 const BatchValidateView = () => {
@@ -13,14 +13,67 @@ const BatchValidateView = () => {
     const [expandedRow, setExpandedRow] = useState<string | null>(null);
     const [progress, setProgress] = useState({ current: 0, total: 0, statusText: '' });
 
+    // ── SharePoint source state ────────────────────────────────────────────
+    const [source, setSource] = useState<'local' | 'sharepoint'>('local');
+    const [spFiles, setSpFiles] = useState<SharePointFile[]>([]);
+    const [spFilesLoading, setSpFilesLoading] = useState(false);
+    const [spFileId, setSpFileId] = useState('');
+    const [spProjects, setSpProjects] = useState<{ project_name: string; narrative_text: string }[] | null>(null);
+    const [spProjectsLoading, setSpProjectsLoading] = useState(false);
+    const [spPeriod, setSpPeriod] = useState('');
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         setUploadedFile(e.target.files[0]);
+        setSpProjects(null);
+    };
+
+    // ── SharePoint handlers ────────────────────────────────────────────────
+    const handleSourceChange = async (newSource: 'local' | 'sharepoint') => {
+        setSource(newSource);
+        setUploadedFile(null);
+        setSpFileId('');
+        setSpProjects(null);
+        setResults([]);
+
+        if (newSource === 'sharepoint' && spFiles.length === 0) {
+            setSpFilesLoading(true);
+            try {
+                const files = await listSharePointFiles();
+                setSpFiles(files);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load SharePoint files');
+            } finally {
+                setSpFilesLoading(false);
+            }
+        }
+    };
+
+    const handleSpFileSelect = async (fileId: string) => {
+        setSpFileId(fileId);
+        setSpProjects(null);
+        if (!fileId) return;
+
+        setSpProjectsLoading(true);
+        setError('');
+        try {
+            const data = await listProjectsFromSharePoint(fileId);
+            setSpProjects(data.projects);
+            setSpPeriod(data.period);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load projects from SharePoint file');
+        } finally {
+            setSpProjectsLoading(false);
+        }
     };
 
     const handleBatchValidate = async () => {
-        if (!uploadedFile) {
+        if (source === 'local' && !uploadedFile) {
             setError('Please upload an MPPR Excel file.');
+            return;
+        }
+        if (source === 'sharepoint' && !spProjects) {
+            setError('Please select a SharePoint file first.');
             return;
         }
 
@@ -31,16 +84,27 @@ const BatchValidateView = () => {
         setProgress({ current: 0, total: 0, statusText: 'Extracting projects from Excel...' });
 
         try {
-            // Step 1: Extract projects from the Excel file
-            const listData = await listProjects(uploadedFile);
-            const projects = listData.projects || [];
+            // Step 1: Get projects — from local upload or SharePoint
+            let projects: { project_name: string; narrative_text: string }[];
+            let resolvedPeriod: string;
+
+            if (source === 'sharepoint' && spProjects) {
+                projects = spProjects;
+                resolvedPeriod = spPeriod;
+            } else {
+                const listData = await listProjects(uploadedFile!);
+                projects = listData.projects || [];
+                resolvedPeriod = listData.period || '';
+            }
+
+            // Keep period state in sync for the results header
+            setPeriod(resolvedPeriod);
 
             if (projects.length === 0) {
-                throw new Error("No projects found in the uploaded file.");
+                throw new Error("No projects found in the selected file.");
             }
 
             setTotal(projects.length);
-            setPeriod(listData.period || '');
 
             const currentResults: any[] = [];
 
@@ -57,7 +121,7 @@ const BatchValidateView = () => {
                     const validationResult = await validateNarrative({
                         narrative:    proj.narrative_text,
                         project_name: proj.project_name,
-                        period:       listData.period || '',
+                        period:       resolvedPeriod,
                     });
                     currentResults.push({ ...validationResult, project_name: proj.project_name });
                 } catch (err: any) {
@@ -177,47 +241,94 @@ const BatchValidateView = () => {
 
                         <div className="form-group">
                             <label className="form-label">MPPR Data Source (Excel)</label>
-                            <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '12px',
-                                border: '1px dashed var(--accent-blue)',
-                                borderRadius: '8px',
-                                padding: '12px 16px',
-                                background: 'var(--accent-blue-glow)',
-                                position: 'relative',
-                                cursor: 'pointer'
-                            }}>
-                                <input
-                                    type="file"
-                                    accept=".xlsx,.xls"
-                                    onChange={handleFileUpload}
-                                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
-                                    title="Upload Excel File"
-                                />
-                                <UploadCloud size={20} style={{ color: 'var(--accent-blue)' }} />
-                                <div style={{ flex: 1 }}>
-                                    {uploadedFile ? (
-                                        <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                            {uploadedFile.name}
-                                        </span>
+
+                            {/* Source toggle */}
+                            <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                {(['local', 'sharepoint'] as const).map(s => (
+                                    <button
+                                        key={s}
+                                        type="button"
+                                        onClick={() => handleSourceChange(s)}
+                                        className={source === s ? 'btn btn-primary' : 'btn btn-outline'}
+                                        style={{ flex: 1, padding: '7px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                    >
+                                        {s === 'local' ? <UploadCloud size={15} /> : <Share2 size={15} />}
+                                        {s === 'local' ? 'Local Upload' : 'SharePoint Library'}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Local upload */}
+                            {source === 'local' && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '12px',
+                                    border: '1px dashed var(--accent-blue)', borderRadius: '8px',
+                                    padding: '12px 16px', background: 'var(--accent-blue-glow)',
+                                    position: 'relative', cursor: 'pointer'
+                                }}>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleFileUpload}
+                                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                        title="Upload Excel File"
+                                    />
+                                    <UploadCloud size={20} style={{ color: 'var(--accent-blue)' }} />
+                                    <div style={{ flex: 1 }}>
+                                        {uploadedFile ? (
+                                            <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                {uploadedFile.name}
+                                            </span>
+                                        ) : (
+                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                Click to upload MPPR Excel
+                                            </span>
+                                        )}
+                                    </div>
+                                    {uploadedFile && <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />}
+                                </div>
+                            )}
+
+                            {/* SharePoint file picker */}
+                            {source === 'sharepoint' && (
+                                <div>
+                                    {spFilesLoading ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', padding: '12px 0' }}>
+                                            <Loader2 size={16} className="spin" /> Loading SharePoint files...
+                                        </div>
                                     ) : (
-                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                            Click to upload MPPR Excel
-                                        </span>
+                                        <select
+                                            className="form-control"
+                                            value={spFileId}
+                                            onChange={e => handleSpFileSelect(e.target.value)}
+                                            style={{ backgroundColor: 'var(--bg-primary)' }}
+                                            disabled={spProjectsLoading}
+                                        >
+                                            <option value="">— Select an MPPR file —</option>
+                                            {spFiles.map(f => (
+                                                <option key={f.file_id} value={f.file_id}>{f.name}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {spProjectsLoading && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '8px' }}>
+                                            <Loader2 size={14} className="spin" /> Loading projects from file...
+                                        </div>
+                                    )}
+                                    {spProjects && !spProjectsLoading && (
+                                        <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--status-pass)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <ShieldCheck size={14} /> {spProjects.length} projects loaded from SharePoint
+                                        </div>
                                     )}
                                 </div>
-                                {uploadedFile && (
-                                    <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />
-                                )}
-                            </div>
+                            )}
                         </div>
 
                         <button
                             onClick={handleBatchValidate}
                             className="btn btn-primary"
                             style={{ width: '100%', padding: '14px' }}
-                            disabled={loading || !uploadedFile}
+                            disabled={loading || (source === 'local' ? !uploadedFile : !spProjects)}
                         >
                             {loading ? (
                                 <>

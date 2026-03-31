@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud, Search } from 'lucide-react';
-import { validateNarrative, listProjects, searchProjects, type ProjectInfo, type SearchedProject } from '../services/api';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud, Search, Share2 } from 'lucide-react';
+import { validateNarrative, listProjects, searchProjects, listSharePointFiles, listProjectsFromSharePoint, type ProjectInfo, type SearchedProject, type SharePointFile } from '../services/api';
 import { diffWords } from 'diff';
 
 const ValidateView = () => {
@@ -18,6 +18,13 @@ const ValidateView = () => {
     const [uploadLoading, setUploadLoading] = useState(false);
     const [toastMessage, setToastMessage] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // ── SharePoint source state ────────────────────────────────────────────
+    const [source, setSource] = useState<'local' | 'sharepoint'>('local');
+    const [spFiles, setSpFiles] = useState<SharePointFile[]>([]);
+    const [spFilesLoading, setSpFilesLoading] = useState(false);
+    const [spFileId, setSpFileId] = useState('');
+    const [spProjectsLoading, setSpProjectsLoading] = useState(false);
 
     // ── Wild search state ──────────────────────────────────────────────────
     const [searchResults, setSearchResults] = useState<SearchedProject[]>([]);
@@ -65,6 +72,52 @@ const ValidateView = () => {
         document.addEventListener('mousedown', close);
         return () => document.removeEventListener('mousedown', close);
     }, []);
+
+    // ── SharePoint handlers ────────────────────────────────────────────────
+    const handleSourceChange = async (newSource: 'local' | 'sharepoint') => {
+        setSource(newSource);
+        // Reset project state when switching sources
+        setProjectsList([]);
+        setUploadedFile(null);
+        setIsManualEntry(true);
+        setProjectName('');
+        setNarrative('');
+        setSpFileId('');
+
+        if (newSource === 'sharepoint' && spFiles.length === 0) {
+            setSpFilesLoading(true);
+            try {
+                const files = await listSharePointFiles();
+                setSpFiles(files);
+            } catch (err: any) {
+                setError(err.message || 'Failed to load SharePoint files');
+            } finally {
+                setSpFilesLoading(false);
+            }
+        }
+    };
+
+    const handleSpFileSelect = async (fileId: string) => {
+        setSpFileId(fileId);
+        if (!fileId) return;
+
+        setSpProjectsLoading(true);
+        setError('');
+        try {
+            const data = await listProjectsFromSharePoint(fileId);
+            setProjectsList(data.projects);
+            setPeriod(data.period);
+            if (data.projects.length > 0) {
+                setIsManualEntry(false);
+                setProjectName(data.projects[0].project_name);
+                setNarrative(data.projects[0].narrative_text || '');
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to load projects from SharePoint file');
+        } finally {
+            setSpProjectsLoading(false);
+        }
+    };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
@@ -193,45 +246,87 @@ const ValidateView = () => {
                         <h2 className="card-title">Project Context</h2>
                         <form onSubmit={handleValidate}>
                             <div className="form-group">
-                                <label className="form-label">Source Data (Optional)</label>
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '12px',
-                                    border: '1px dashed var(--accent-blue)',
-                                    borderRadius: '8px',
-                                    padding: '12px 16px',
-                                    background: 'var(--accent-blue-glow)',
-                                    position: 'relative',
-                                    cursor: 'pointer'
-                                }}>
-                                    <input
-                                        type="file"
-                                        accept=".xlsx,.xls"
-                                        onChange={handleFileUpload}
-                                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
-                                        title="Upload Excel File"
-                                    />
-                                    <UploadCloud size={20} style={{ color: 'var(--accent-blue)' }} />
-                                    <div style={{ flex: 1 }}>
-                                        {uploadLoading ? (
-                                            <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
-                                                <Loader2 size={16} className="spin" /> Processing...
-                                            </span>
-                                        ) : uploadedFile ? (
-                                            <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                                                {uploadedFile.name} ({projectsList.length} loaded)
-                                            </span>
+                                <label className="form-label">Data Source (Optional)</label>
+
+                                {/* Source toggle */}
+                                <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                                    {(['local', 'sharepoint'] as const).map(s => (
+                                        <button
+                                            key={s}
+                                            type="button"
+                                            onClick={() => handleSourceChange(s)}
+                                            className={source === s ? 'btn btn-primary' : 'btn btn-outline'}
+                                            style={{ flex: 1, padding: '7px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                                        >
+                                            {s === 'local' ? <UploadCloud size={15} /> : <Share2 size={15} />}
+                                            {s === 'local' ? 'Local Upload' : 'SharePoint Library'}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Local upload */}
+                                {source === 'local' && (
+                                    <div style={{
+                                        display: 'flex', alignItems: 'center', gap: '12px',
+                                        border: '1px dashed var(--accent-blue)', borderRadius: '8px',
+                                        padding: '12px 16px', background: 'var(--accent-blue-glow)',
+                                        position: 'relative', cursor: 'pointer'
+                                    }}>
+                                        <input
+                                            type="file"
+                                            accept=".xlsx,.xls"
+                                            onChange={handleFileUpload}
+                                            style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
+                                            title="Upload Excel File"
+                                        />
+                                        <UploadCloud size={20} style={{ color: 'var(--accent-blue)' }} />
+                                        <div style={{ flex: 1 }}>
+                                            {uploadLoading ? (
+                                                <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem' }}>
+                                                    <Loader2 size={16} className="spin" /> Processing...
+                                                </span>
+                                            ) : uploadedFile ? (
+                                                <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                    {uploadedFile.name} ({projectsList.length} loaded)
+                                                </span>
+                                            ) : (
+                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                    Click to upload MPPR Excel (auto-fill)
+                                                </span>
+                                            )}
+                                        </div>
+                                        {uploadedFile && <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />}
+                                    </div>
+                                )}
+
+                                {/* SharePoint file picker */}
+                                {source === 'sharepoint' && (
+                                    <div>
+                                        {spFilesLoading ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem', padding: '12px 0' }}>
+                                                <Loader2 size={16} className="spin" /> Loading SharePoint files...
+                                            </div>
                                         ) : (
-                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                                Click to upload MPPR Excel (auto-fill)
-                                            </span>
+                                            <select
+                                                className="form-control"
+                                                value={spFileId}
+                                                onChange={e => handleSpFileSelect(e.target.value)}
+                                                style={{ backgroundColor: 'var(--bg-primary)' }}
+                                                disabled={spProjectsLoading}
+                                            >
+                                                <option value="">— Select an MPPR file —</option>
+                                                {spFiles.map(f => (
+                                                    <option key={f.file_id} value={f.file_id}>{f.name}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                        {spProjectsLoading && (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '8px' }}>
+                                                <Loader2 size={14} className="spin" /> Loading projects from file...
+                                            </div>
                                         )}
                                     </div>
-                                    {uploadedFile && (
-                                        <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />
-                                    )}
-                                </div>
+                                )}
                             </div>
 
                             <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
