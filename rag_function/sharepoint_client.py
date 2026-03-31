@@ -91,16 +91,29 @@ def _get_list_name() -> str:
 def _get_drive_id(site_id: str, token: str) -> str:
     """Get the drive ID for the configured SharePoint list/library."""
     list_name = urllib.parse.quote(_get_list_name())
+
     # Get the list's internal ID first
     list_data = _graph_get(
-        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id", token
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_name}?$select=id,name,list", token
     )
+    logger.info("sharepoint_client: list_data response: %s", json.dumps(list_data))
     list_id = list_data["id"]
+
     # Then get the drive attached to that list
     drive_data = _graph_get(
-        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive?$select=id", token
+        f"{_GRAPH_BASE}/sites/{site_id}/lists/{list_id}/drive", token
     )
-    return drive_data["id"]
+    logger.info("sharepoint_client: drive_data response: %s", json.dumps(drive_data))
+
+    # Handle both direct id and wrapped responses
+    if "id" in drive_data:
+        return drive_data["id"]
+    if "value" in drive_data and len(drive_data["value"]) > 0:
+        return drive_data["value"][0]["id"]
+
+    raise ValueError(
+        f"Could not find drive ID in response. Full response: {json.dumps(drive_data)}"
+    )
 
 
 def list_files() -> List[Dict[str, str]]:
