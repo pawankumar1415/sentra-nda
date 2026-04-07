@@ -45,25 +45,34 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 def ingest_mppr(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("ingest-mppr triggered.")
 
-    file_data = req.files.get("file")
-    if not file_data:
+    # Accept either multipart/form-data OR raw binary body (Power Automate sends raw binary)
+    file_bytes:       bytes = b""
+    filename:         str   = ""
+    reporting_period: str   = req.params.get("reporting_period", "")
+
+    if req.files and "file" in req.files:
+        uploaded         = req.files["file"]
+        file_bytes       = uploaded.read()
+        filename         = getattr(uploaded, "filename", "") or ""
+        reporting_period = reporting_period or req.form.get("reporting_period", "")
+    else:
+        file_bytes = req.get_body()
+        filename   = req.params.get("filename", "")
+
+    if not file_bytes:
         return func.HttpResponse(
-            json.dumps({"error": "No file provided. Send an .xlsx file in the 'file' field."}),
+            json.dumps({"error": "No file provided. Send an .xlsx file in the 'file' field or as raw body."}),
             status_code=400,
             mimetype="application/json",
         )
 
-    reporting_period = req.form.get("reporting_period", "Unknown")
-
-    try:
-        file_bytes = file_data.read()
-    except Exception as exc:
-        logger.exception("Failed to read uploaded file.")
-        return func.HttpResponse(
-            json.dumps({"error": f"Failed to read file: {exc}"}),
-            status_code=400,
-            mimetype="application/json",
-        )
+    # Auto-extract the reporting period from the Excel file if not supplied
+    if not reporting_period:
+        try:
+            from batch_validate import parse_excel
+            reporting_period, _ = parse_excel(file_bytes, filename=filename)
+        except Exception:
+            reporting_period = "Unknown"
 
     try:
         result = run_ingest(file_bytes, reporting_period)
@@ -93,20 +102,18 @@ def ingest_mppr(req: func.HttpRequest) -> func.HttpResponse:
 def ingest_eac(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("ingest-eac triggered.")
 
-    file_data = req.files.get("file")
-    if not file_data:
-        return func.HttpResponse(
-            json.dumps({"error": "No file provided. Send the .xlsx file in the 'file' field."}),
-            status_code=400,
-            mimetype="application/json",
-        )
+    # Accept either multipart/form-data OR raw binary body (Power Automate sends raw binary)
+    file_bytes: bytes = b""
 
-    try:
-        file_bytes = file_data.read()
-    except Exception as exc:
-        logger.exception("Failed to read uploaded EAC file.")
+    if req.files and "file" in req.files:
+        uploaded   = req.files["file"]
+        file_bytes = uploaded.read()
+    else:
+        file_bytes = req.get_body()
+
+    if not file_bytes:
         return func.HttpResponse(
-            json.dumps({"error": f"Failed to read file: {exc}"}),
+            json.dumps({"error": "No file provided. Send the .xlsx file in the 'file' field or as raw body."}),
             status_code=400,
             mimetype="application/json",
         )
