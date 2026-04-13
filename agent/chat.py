@@ -351,6 +351,11 @@ def run_chat(
     resp   = openai_client.chat.completions.create(model=deployment, messages=messages)
     answer = resp.choices[0].message.content
 
+    # Strip <br> and <br/> tags the model inserts between HTML elements.
+    # These cause large unwanted gaps when rendered in Power Apps HTML text control.
+    import re
+    answer = re.sub(r'\s*<br\s*/?>\s*', '', answer)
+
     # ── 6. Persist exchange ───────────────────────────────────────────────────
     updated_history = history + [
         {"role": "user",      "content": question},
