@@ -34,6 +34,7 @@ from agent_runner import (
     _save_conversation_history,
 )
 from ingest_helper import SEARCH_ENDPOINT, SEARCH_INDEX_NAME, _credential
+from tools import check_eac_variance
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +194,45 @@ def _get_eac_context(project_names: List[str]) -> str:
     return context
 
 
+# ─── EAC blob context ────────────────────────────────────────────────────────
+
+def _get_eac_blob_context(project_names: List[str]) -> str:
+    """
+    Fetch EAC variance data from Blob Storage for the detected projects.
+    This is the authoritative EAC source — the lifecycle_eac_variance.xlsx file
+    uploaded via /api/ingest-eac. More complete than the AI Search EAC fields
+    which come from the MPPR and are often null.
+    """
+    if not project_names:
+        return ""
+
+    parts = []
+    for name in project_names[:3]:  # cap at 3 to keep context size reasonable
+        try:
+            raw  = check_eac_variance(project_name=name)
+            data = json.loads(raw)
+            if "error" in data:
+                logger.debug("EAC blob: no data for '%s': %s", name, data["error"])
+                continue
+            eac_var  = data.get("eac_variance_gbp") or 0
+            sched    = data.get("schedule_variance_days", 0)
+            parts.append(
+                f"EAC DATA — {data.get('project_name', name)} (Period: {data.get('period', 'N/A')}):\n"
+                f"  EAC Current:          £{(data.get('eac_current_gbp') or 0) / 1_000_000:.2f}m\n"
+                f"  EAC vs Last Period:   £{eac_var / 1_000_000:.3f}m "
+                f"— {data.get('eac_assessment', {}).get('label', 'N/A')}\n"
+                f"  Schedule Variance:    {sched} days "
+                f"— {data.get('schedule_assessment', {}).get('label', 'N/A')}\n"
+                f"  Overall Requirement: {data.get('overall_narrative_requirement', 'N/A')}"
+            )
+        except Exception as exc:
+            logger.warning("EAC blob lookup failed for '%s': %s", name, exc)
+
+    if not parts:
+        return ""
+    return "EAC VARIANCE DATA (lifecycle dataset — authoritative):\n" + "\n\n".join(parts)
+
+
 # ─── Intent detection ─────────────────────────────────────────────────────────
 
 def _detect_intent(openai_client, deployment: str, question: str) -> Dict[str, Any]:
@@ -275,7 +315,7 @@ def run_chat(
 
     logger.info("Chat — intent: %s, projects: %s, session: %s", intent, projects, session_id)
 
-    # ── 3. Gather context from Azure AI Search ────────────────────────────────
+    # ── 3. Gather context from Azure AI Search + EAC Blob Storage ────────────
     if intent == "portfolio_summary":
         context = _get_portfolio_summary()
     elif intent == "eac_query":
@@ -284,6 +324,14 @@ def run_chat(
         context = "No specific NDA project context needed for general questions."
     else:
         context = _get_project_context(question, projects, top_k=5)
+
+    # Append EAC blob data for any query where specific projects were detected.
+    # The lifecycle EAC variance file (Blob Storage) is the authoritative source
+    # for EAC and schedule movements — AI Search fields are often null.
+    if projects and intent != "general":
+        eac_blob = _get_eac_blob_context(projects)
+        if eac_blob:
+            context = context + "\n\n" + eac_blob
 
     # ── 4. Build messages ─────────────────────────────────────────────────────
     messages = [{"role": "system", "content": _ANSWER_PROMPT}]
