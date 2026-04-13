@@ -178,15 +178,18 @@ def _extract_projects(file_stream: io.BytesIO, reporting_period: str) -> list[di
 
         # Metadata row: col A is NaN, col B is a short project name
         if _safe(col_A) is None and b_str and len(b_str) < 120:
-            narrative = None
-            if idx + 1 < len(df_typed):
-                next_col_A = _str(df_typed.iat[idx + 1, 0])
-                next_col_B = _str(df_typed.iat[idx + 1, 1])
-                if next_col_A and next_col_A == b_str and next_col_B and len(next_col_B) > 120:
+            # Search the next 3 rows for a narrative — the strict row-exact match
+            # previously caused projects with short/offset narratives to be silently
+            # skipped and never indexed. Now we index every project; narrative
+            # defaults to "" if none is found.
+            narrative = ""
+            for look in range(1, 4):
+                if idx + look >= len(df_typed):
+                    break
+                next_col_B = _str(df_typed.iat[idx + look, 1])
+                if next_col_B and len(next_col_B) > 20:
                     narrative = next_col_B.strip()
-
-            if not narrative:
-                continue
+                    break
 
             doc = {
                 "id":                     f"{_make_id(b_str)}_{reporting_period}",
