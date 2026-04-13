@@ -60,7 +60,12 @@ If the context data does not contain the answer, say "I don't have enough data t
 
 Formatting rules:
 - Always respond in valid HTML, not Markdown.
-- Use <p> for paragraphs, <strong> for bold, <ul>/<li> for bullet lists, <table>/<thead>/<tbody>/<tr>/<th>/<td> for tables.
+- Use <p style="margin:0 0 4px 0"> for paragraphs.
+- Use <strong> for bold text.
+- Use <ul style="margin:4px 0;padding-left:18px"> and <li style="margin:2px 0"> for bullet lists.
+- For tables use: <table style="border-collapse:collapse;width:100%;margin:4px 0"> with <th style="border:1px solid #ccc;padding:4px 8px;text-align:left;background:#f5f5f5"> and <td style="border:1px solid #ccc;padding:4px 8px">.
+- Do NOT use <br> tags or empty <p> tags to add spacing. Use the margin styles above instead.
+- Do NOT use <h1>, <h2>, <h3> headings — use <p><strong>Title</strong></p> instead.
 - If summarizing multiple projects, use an HTML table with columns for Project, Status, and relevant details.
 - Always mention the Reporting Period (e.g., "In P07...") if it is in the data.
 - Keep answers professional, concise, and analytical.
