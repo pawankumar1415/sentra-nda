@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -64,7 +65,8 @@ Formatting rules:
 - Use <strong> for bold text.
 - Use <ul style="margin:4px 0;padding-left:18px"> and <li style="margin:2px 0"> for bullet lists.
 - For tables use: <table style="border-collapse:collapse;width:100%;margin:4px 0"> with <th style="border:1px solid #ccc;padding:4px 8px;text-align:left;background:#f5f5f5"> and <td style="border:1px solid #ccc;padding:4px 8px">.
-- Do NOT use <br> tags or empty <p> tags to add spacing. Use the margin styles above instead.
+- NEVER use <br>, <br/> or <br /> anywhere — not between tags, not inside cells, not anywhere. They are forbidden.
+- NEVER add whitespace or newlines between closing and opening HTML tags. Place tags directly next to each other: </p><table> not </p>\n\n<table>.
 - Do NOT use <h1>, <h2>, <h3> headings — use <p><strong>Title</strong></p> instead.
 - If summarizing multiple projects, use an HTML table with columns for Project, Status, and relevant details.
 - Always mention the Reporting Period (e.g., "In P07...") if it is in the data.
@@ -351,10 +353,11 @@ def run_chat(
     resp   = openai_client.chat.completions.create(model=deployment, messages=messages)
     answer = resp.choices[0].message.content
 
-    # Strip <br> and <br/> tags the model inserts between HTML elements.
-    # These cause large unwanted gaps when rendered in Power Apps HTML text control.
-    import re
-    answer = re.sub(r'\s*<br\s*/?>\s*', '', answer)
+    # The model inserts <br/> between every HTML element causing large gaps in
+    # Power Apps HTML text control. Strip ALL <br> variants aggressively, then
+    # collapse any runs of whitespace-only between tags so the HTML is compact.
+    answer = re.sub(r'<br\s*/?>', '', answer, flags=re.IGNORECASE)
+    answer = re.sub(r'>\s+<', '><', answer)
 
     # ── 6. Persist exchange ───────────────────────────────────────────────────
     updated_history = history + [
