@@ -122,6 +122,11 @@ const ValidateView = () => {
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
         const file = e.target.files[0];
+        if (!file.name.toLowerCase().endsWith('.xlsx')) {
+            setError('Only .xlsx files are accepted. Please upload an Excel spreadsheet.');
+            e.target.value = '';
+            return;
+        }
         setUploadedFile(file);
 
         setUploadLoading(true);
@@ -274,7 +279,7 @@ const ValidateView = () => {
                                     }}>
                                         <input
                                             type="file"
-                                            accept=".xlsx,.xls"
+                                            accept=".xlsx"
                                             onChange={handleFileUpload}
                                             style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', zIndex: 10 }}
                                             title="Upload Excel File"

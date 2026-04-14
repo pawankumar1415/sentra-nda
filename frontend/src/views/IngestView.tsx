@@ -17,6 +17,28 @@ const IngestView = () => {
     const mpprInputRef = useRef<HTMLInputElement>(null);
     const eacInputRef = useRef<HTMLInputElement>(null);
 
+    const handleMpprFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] || null;
+        if (file && !file.name.toLowerCase().endsWith('.xlsx')) {
+            setMpprError('Only .xlsx files are accepted. Please upload an Excel spreadsheet.');
+            e.target.value = '';
+            return;
+        }
+        setMpprError('');
+        setMpprFile(file);
+    };
+
+    const handleEacFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] || null;
+        if (file && !file.name.toLowerCase().endsWith('.xlsx')) {
+            setEacError('Only .xlsx files are accepted. Please upload an Excel spreadsheet.');
+            e.target.value = '';
+            return;
+        }
+        setEacError('');
+        setEacFile(file);
+    };
+
     const handleMpprUpload = async () => {
         if (!mpprFile) return setMpprError('Please select a file.');
 
@@ -78,8 +100,8 @@ const IngestView = () => {
                             type="file"
                             ref={mpprInputRef}
                             style={{ display: 'none' }}
-                            accept=".xlsx,.xls"
-                            onChange={(e) => setMpprFile(e.target.files?.[0] || null)}
+                            accept=".xlsx"
+                            onChange={handleMpprFileChange}
                         />
 
                         {mpprFile ? (
@@ -142,8 +164,8 @@ const IngestView = () => {
                             type="file"
                             ref={eacInputRef}
                             style={{ display: 'none' }}
-                            accept=".xlsx,.xls"
-                            onChange={(e) => setEacFile(e.target.files?.[0] || null)}
+                            accept=".xlsx"
+                            onChange={handleEacFileChange}
                         />
 
                         {eacFile ? (
