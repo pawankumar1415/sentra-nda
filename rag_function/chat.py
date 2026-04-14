@@ -80,20 +80,19 @@ def _detect_intent(question: str) -> Dict[str, Any]:
         logger.error(f"Intent detection failed: {e}")
         return {"intent": "project_query", "project_names": []} # Fallback to standard vector search
 
-def _get_portfolio_summary(user_id: Optional[str] = None) -> str:
-    """Fetches high-level metadata for all projects in the latest period (scoped to user)."""
+def _get_portfolio_summary() -> str:
+    """Fetches high-level metadata for all projects in the latest period (shared data)."""
     sql = """
         SELECT project_name, dca_rag_status, capability_capacity_rag, eac_variance, schedule_variance_days
         FROM nda_projects
-        WHERE user_id = %s
-          AND period_short_name = (
-              SELECT period_short_name FROM nda_projects WHERE user_id = %s ORDER BY period_short_name DESC LIMIT 1
-          )
+        WHERE period_short_name = (
+            SELECT period_short_name FROM nda_projects ORDER BY period_short_name DESC LIMIT 1
+        )
     """
     context = "LATEST PORTFOLIO DATA:\n"
     with DBConnection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (user_id, user_id))
+            cur.execute(sql)
             rows = cur.fetchall()
             if not rows:
                 return "No portfolio data available in the database."
@@ -103,14 +102,14 @@ def _get_portfolio_summary(user_id: Optional[str] = None) -> str:
                 context += f"- {r[0]}: RAG={r[1]}, CapRAG={r[2]}, EAC Variance=£{eac_v/1000000:.2f}m, Schedule Slip={sched_v} days\n"
     return context
 
-def _get_eac_data(project_names: List[str], user_id: Optional[str] = None) -> str:
-    """Fetches EAC variance explicit data (scoped to user)."""
+def _get_eac_data(project_names: List[str]) -> str:
+    """Fetches EAC variance explicit data (shared data)."""
     if not project_names:
-        sql = "SELECT project_name, period_short_name, eac_variance, schedule_variance_days, summary_text FROM nda_eac_variance WHERE user_id = %s ORDER BY abs(eac_variance) DESC LIMIT 10"
-        params = (user_id,)
+        sql = "SELECT project_name, period_short_name, eac_variance, schedule_variance_days, summary_text FROM nda_eac_variance ORDER BY abs(eac_variance) DESC LIMIT 10"
+        params: tuple = ()
     else:
-        sql = "SELECT project_name, period_short_name, eac_variance, schedule_variance_days, summary_text FROM nda_eac_variance WHERE lower(project_name) LIKE lower(%s) AND user_id = %s ORDER BY period_short_name DESC LIMIT 5"
-        params = (f"%{project_names[0]}%", user_id)
+        sql = "SELECT project_name, period_short_name, eac_variance, schedule_variance_days, summary_text FROM nda_eac_variance WHERE lower(project_name) LIKE lower(%s) ORDER BY period_short_name DESC LIMIT 5"
+        params = (f"%{project_names[0]}%",)
 
     context = "EAC & SCHEDULE VARIANCES:\n"
     with DBConnection() as conn:
@@ -123,8 +122,8 @@ def _get_eac_data(project_names: List[str], user_id: Optional[str] = None) -> st
                 context += f"- {r[0]} ({r[1]}): Variance £{r[2]/1000000:.2f}m, Slip {r[3]} days. Details: {r[4]}\n"
     return context
 
-def _vector_search(question: str, project_names: List[str], top_k: int = 5, user_id: Optional[str] = None) -> str:
-    """Standard pgvector cosine similarity search (scoped to user)."""
+def _vector_search(question: str, project_names: List[str], top_k: int = 5) -> str:
+    """Standard pgvector cosine similarity search (shared data)."""
     enhanced_query = question
     if project_names:
         enhanced_query += " " + " ".join(project_names)
@@ -135,11 +134,10 @@ def _vector_search(question: str, project_names: List[str], top_k: int = 5, user
         SELECT project_name, period_short_name, raw_content,
                1 - (embedding <=> %s::vector) AS score
         FROM nda_projects
-        WHERE user_id = %s
         ORDER BY embedding <=> %s::vector
         LIMIT %s;
     """
-    params = (query_vector, user_id, query_vector, top_k)
+    params = (query_vector, query_vector, top_k)
 
     context = "RETRIEVED NARRATIVE CONTEXT:\n"
     with DBConnection() as conn:
@@ -221,15 +219,15 @@ def run_chat(
 
     # ── 3. Gather RAG context from the database ───────────────────────────────
     if intent == "portfolio_summary":
-        context = _get_portfolio_summary(user_id=user_id)
+        context = _get_portfolio_summary()
     elif intent == "eac_query":
         # Combine financial data + relevant narrative snippets
-        context = _get_eac_data(projects, user_id=user_id) + "\n\n" + _vector_search(question, projects, top_k=2, user_id=user_id)
+        context = _get_eac_data(projects) + "\n\n" + _vector_search(question, projects, top_k=2)
     elif intent == "general":
         context = "No specific NDA project context needed for general questions."
     else:
         # Default: project_query — pure vector search
-        context = _vector_search(question, projects, top_k=5, user_id=user_id)
+        context = _vector_search(question, projects, top_k=5)
 
     # ── 4. Build LLM message list ─────────────────────────────────────────────
     # Order: system prompt → conversation history → current user question (with context)

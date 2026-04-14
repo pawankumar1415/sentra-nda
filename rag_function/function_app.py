@@ -288,7 +288,6 @@ def validate(req: func.HttpRequest) -> func.HttpResponse:
             project_name=project_name,
             period=period,
             top_k=top_k,
-            user_id=user["user_id"],
         )
         return func.HttpResponse(json.dumps(result, indent=2), status_code=200, mimetype="application/json")
     except Exception as exc:
@@ -321,7 +320,7 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
             question=question,
             session_id=session_id,
             history=history,
-            user_id=user["user_id"],
+            user_id=user["user_id"],  # kept for session metadata
         )
         return func.HttpResponse(json.dumps(result, indent=2), status_code=200, mimetype="application/json")
     except Exception as exc:
@@ -374,7 +373,7 @@ def search_projects_route(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         limit   = min(int(req.params.get("limit", 20)), 50)
-        results = search_projects(query, user_id=user["user_id"], limit=limit)
+        results = search_projects(query, limit=limit)
         return _ok({"projects": results})
     except Exception as exc:
         logger.exception("search-projects failed: %s", exc)
@@ -456,7 +455,7 @@ def batch_validate(req: func.HttpRequest) -> func.HttpResponse:
 
         top_k  = int(req.params.get("top_k", 5))
         result = run_batch_validate(
-            file_bytes, filename=filename, top_k=top_k, user_id=user["user_id"]
+            file_bytes, filename=filename, top_k=top_k,
         )
         return _ok(result)
 

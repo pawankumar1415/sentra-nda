@@ -61,7 +61,6 @@ def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5, us
                 project_name=project_name,
                 period=period,
                 top_k=top_k,
-                user_id=user_id or None,
             )
             val_result["project_name"] = project_name
             results.append(val_result)

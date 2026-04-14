@@ -96,28 +96,29 @@ def parse_eac_excel(file_bytes: bytes) -> List[Dict]:
 
 
 def run_ingest_eac(file_bytes: bytes, user_id: str = "") -> Dict:
-    """Pipelines EAC excel bytes into PostgreSQL table (scoped to user_id)."""
+    """Pipelines EAC excel bytes into PostgreSQL table (shared — all users see the same data)."""
     logger.info("Starting EAC ingest pipeline (user_id=%s)", user_id)
 
     projects = parse_eac_excel(file_bytes)
     if not projects:
         return {"status": "warning", "message": "No EAC rows found", "indexed": 0}
 
-    # Composite PK is (project_name, user_id) so each user's EAC data is isolated
+    # PK is just project_name — shared data, user_id stored as audit metadata only
     upsert_sql = """
         INSERT INTO nda_eac_variance (
-            project_name, user_id, period_short_name, eac_variance,
-            schedule_variance_days, flag, summary_text, updated_at
+            project_name, period_short_name, eac_variance,
+            schedule_variance_days, flag, summary_text, updated_at, user_id
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, NOW()
+            %s, %s, %s, %s, %s, %s, NOW(), %s
         )
-        ON CONFLICT (project_name, user_id) DO UPDATE SET
+        ON CONFLICT (project_name) DO UPDATE SET
             period_short_name      = EXCLUDED.period_short_name,
             eac_variance           = EXCLUDED.eac_variance,
             schedule_variance_days = EXCLUDED.schedule_variance_days,
             flag                   = EXCLUDED.flag,
             summary_text           = EXCLUDED.summary_text,
-            updated_at             = NOW();
+            updated_at             = NOW(),
+            user_id                = EXCLUDED.user_id;
     """
 
     with DBConnection() as conn:
@@ -125,12 +126,12 @@ def run_ingest_eac(file_bytes: bytes, user_id: str = "") -> Dict:
             for p in projects:
                 cur.execute(upsert_sql, (
                     p["project_name"],
-                    user_id or None,
                     p["period_short_name"],
                     p["eac_variance"],
                     p["schedule_variance_days"],
                     p["flag"],
                     p["summary_text"],
+                    user_id or None,
                 ))
 
     logger.info("Upserted %d projects to nda_eac_variance", len(projects))

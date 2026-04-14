@@ -180,27 +180,49 @@ _MIGRATION_SQL = """
 ALTER TABLE nda_projects  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
--- nda_eac_variance changed from PK(project_name) to PK(project_name, user_id).
--- If the old schema is present (no user_id column), drop and let CREATE TABLE rebuild it.
+-- nda_eac_variance: migrate to shared data model.
+-- Drop the old (project_name, user_id) composite PK and replace with project_name only
+-- so all users share the same EAC dataset.
 DO $$
 BEGIN
+    -- If user_id column does not exist yet, table is old schema — drop and rebuild
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'nda_eac_variance' AND column_name = 'user_id'
     ) THEN
         DROP TABLE IF EXISTS nda_eac_variance;
     END IF;
+
+    -- If composite PK (project_name, user_id) exists, drop it and add project_name-only PK
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_name = 'nda_eac_variance' AND constraint_type = 'PRIMARY KEY'
+    ) THEN
+        -- Check if user_id is part of the PK by checking columns
+        IF EXISTS (
+            SELECT 1 FROM information_schema.key_column_usage
+            WHERE table_name = 'nda_eac_variance'
+              AND constraint_name = (
+                  SELECT constraint_name FROM information_schema.table_constraints
+                  WHERE table_name = 'nda_eac_variance' AND constraint_type = 'PRIMARY KEY'
+              )
+              AND column_name = 'user_id'
+        ) THEN
+            ALTER TABLE nda_eac_variance DROP CONSTRAINT IF EXISTS nda_eac_variance_pkey;
+            ALTER TABLE nda_eac_variance ALTER COLUMN user_id DROP NOT NULL;
+            ALTER TABLE nda_eac_variance ADD PRIMARY KEY (project_name);
+        END IF;
+    END IF;
 END $$;
 """
 
 
-def search_projects(query: str, user_id: str, limit: int = 20) -> list:
+def search_projects(query: str, limit: int = 20) -> list:
     """
-    Search indexed project names in nda_projects scoped to the given user.
+    Search indexed project names in nda_projects (shared — no user scoping).
 
     Args:
         query:   Partial project name to search for (ILIKE '%query%').
-        user_id: UUID of the authenticated user — only their projects are returned.
         limit:   Maximum number of distinct projects to return.
 
     Returns:
@@ -213,7 +235,6 @@ def search_projects(query: str, user_id: str, limit: int = 20) -> list:
                narrative_text
         FROM   nda_projects
         WHERE  project_name ILIKE %s
-          AND  user_id = %s
         ORDER  BY project_name, indexed_at DESC
         LIMIT  %s
     """
@@ -221,7 +242,7 @@ def search_projects(query: str, user_id: str, limit: int = 20) -> list:
     results = []
     with DBConnection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, (pattern, user_id, limit))
+            cur.execute(sql, (pattern, limit))
             for row in cur.fetchall():
                 results.append({
                     "project_name":      row[0],

@@ -236,12 +236,12 @@ def run_ingest(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict
     Full ingest pipeline:
       1. Parse Excel → project rows
       2. Batch-embed raw_content strings
-      3. Upsert all rows into nda_projects (scoped to user_id)
+      3. Upsert all rows into nda_projects (shared — no user scoping)
 
     Args:
         file_bytes: Raw Excel file bytes.
         filename:   Original filename for period extraction.
-        user_id:    UUID of the authenticated user — data is isolated per user.
+        user_id:    UUID of the authenticated user — stored as audit metadata only.
 
     Returns a summary dict suitable for the HTTP response.
     """
@@ -257,8 +257,8 @@ def run_ingest(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict
     texts   = [p["raw_content"] for p in projects]
     vectors = embed_batch(texts)
 
-    # 2 — upsert to PostgreSQL (project_id is scoped per user so two users can
-    #     upload the same period file without overwriting each other's data)
+    # 2 — upsert to PostgreSQL (shared data — project_id is period|project_name,
+    #     all users see the same data, user_id stored as audit trail only)
     upsert_sql = """
         INSERT INTO nda_projects (
             project_id, project_name, period_short_name,
@@ -286,10 +286,8 @@ def run_ingest(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict
     with DBConnection() as conn:
         with conn.cursor() as cur:
             for project, vector in zip(projects, vectors):
-                # Prefix project_id with user_id so each user has their own namespace
-                scoped_id = f"{user_id}|{project['project_id']}" if user_id else project["project_id"]
                 cur.execute(upsert_sql, (
-                    scoped_id,
+                    project["project_id"],
                     project["project_name"],
                     project["period_short_name"],
                     project["rag_status"],
