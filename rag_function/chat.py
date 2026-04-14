@@ -25,12 +25,15 @@ or a test), the provided history is used for that call but nothing is persisted.
 
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from db import DBConnection
 from embedder import embed
 from validate import _get_gpt_client, _chat_deployment
 from conversation import create_session, load_history, save_turn, session_exists
+
+_PERIOD_RE = re.compile(r'\bP\d{2}\b', re.IGNORECASE)
 
 logger = logging.getLogger(__name__)
 
@@ -122,32 +125,59 @@ def _get_eac_data(project_names: List[str]) -> str:
                 context += f"- {r[0]} ({r[1]}): Variance £{r[2]/1000000:.2f}m, Slip {r[3]} days. Details: {r[4]}\n"
     return context
 
-def _vector_search(question: str, project_names: List[str], top_k: int = 5) -> str:
-    """Standard pgvector cosine similarity search (shared data)."""
+def _vector_search(question: str, project_names: List[str], top_k: int = 5, periods: Optional[List[str]] = None) -> str:
+    """
+    pgvector cosine similarity search (shared data).
+    If specific periods are detected in the question, fetches rows for each
+    period explicitly so cross-period comparisons always have the right data.
+    """
     enhanced_query = question
     if project_names:
         enhanced_query += " " + " ".join(project_names)
 
     query_vector = embed(enhanced_query)
-
-    sql = """
-        SELECT project_name, period_short_name, raw_content,
-               1 - (embedding <=> %s::vector) AS score
-        FROM nda_projects
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s;
-    """
-    params = (query_vector, query_vector, top_k)
-
     context = "RETRIEVED NARRATIVE CONTEXT:\n"
+
     with DBConnection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, params)
+
+            # If the user asked about specific periods, pull one best match per period
+            # so a "compare P07 and P08" question always gets data from both
+            if periods and project_names:
+                for period in periods:
+                    sql = """
+                        SELECT project_name, period_short_name, raw_content,
+                               1 - (embedding <=> %s::vector) AS score
+                        FROM nda_projects
+                        WHERE lower(period_short_name) = lower(%s)
+                          AND lower(project_name) LIKE lower(%s)
+                        ORDER BY embedding <=> %s::vector
+                        LIMIT 1;
+                    """
+                    for pname in project_names:
+                        cur.execute(sql, (query_vector, period, f"%{pname}%", query_vector))
+                        row = cur.fetchone()
+                        if row:
+                            context += f"--- {row[0]} ({row[1]}) [Score: {row[3]:.2f}] ---\n{row[2]}\n\n"
+                # If we got period-specific results, return them
+                if context != "RETRIEVED NARRATIVE CONTEXT:\n":
+                    return context
+
+            # Default: top-k cosine similarity (no period filter)
+            sql = """
+                SELECT project_name, period_short_name, raw_content,
+                       1 - (embedding <=> %s::vector) AS score
+                FROM nda_projects
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s;
+            """
+            cur.execute(sql, (query_vector, query_vector, top_k))
             rows = cur.fetchall()
             if not rows:
                 return "No matching narrative data found."
             for r in rows:
                 context += f"--- {r[0]} ({r[1]}) [Score: {r[3]:.2f}] ---\n{r[2]}\n\n"
+
     return context
 
 
@@ -215,19 +245,34 @@ def run_chat(
     intent      = intent_data["intent"]
     projects    = intent_data["project_names"]
 
-    logger.info("Chat request — intent: %s, projects: %s, session: %s", intent, projects, session_id)
+    # Extract any period references from the question (e.g. "P07", "P08")
+    periods = [m.upper() for m in _PERIOD_RE.findall(question)]
+
+    # Also check the recent history for project names the user was just discussing
+    # so follow-up questions like "compare P07 and P08" resolve correctly
+    if not projects and effective_history:
+        last_assistant = next(
+            (m["content"] for m in reversed(effective_history) if m["role"] == "assistant"),
+            ""
+        )
+        # Re-run intent detection on the last assistant message to recover project names
+        if last_assistant:
+            prior_intent = _detect_intent(last_assistant)
+            projects = prior_intent.get("project_names", [])
+
+    logger.info("Chat request — intent: %s, projects: %s, periods: %s, session: %s", intent, projects, periods, session_id)
 
     # ── 3. Gather RAG context from the database ───────────────────────────────
     if intent == "portfolio_summary":
         context = _get_portfolio_summary()
     elif intent == "eac_query":
         # Combine financial data + relevant narrative snippets
-        context = _get_eac_data(projects) + "\n\n" + _vector_search(question, projects, top_k=2)
+        context = _get_eac_data(projects) + "\n\n" + _vector_search(question, projects, top_k=2, periods=periods)
     elif intent == "general":
         context = "No specific NDA project context needed for general questions."
     else:
-        # Default: project_query — pure vector search
-        context = _vector_search(question, projects, top_k=5)
+        # Default: project_query — pure vector search, with period-aware fetching
+        context = _vector_search(question, projects, top_k=5, periods=periods)
 
     # ── 4. Build LLM message list ─────────────────────────────────────────────
     # Order: system prompt → conversation history → current user question (with context)
