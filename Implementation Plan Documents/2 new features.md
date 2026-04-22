@@ -7,7 +7,7 @@ Two new features that extend the existing RAG pipeline and frontend.
 ## Feature 1 — Batch Validation
 
 ### What it does
-A new API route `POST /api/batch-validate` accepts an Excel file (same format as `/api/ingest`). It parses the `5a)NDA MPPR` sheet, runs [run_validate()](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/validate.py#218-277) for every project that has a narrative, and streams back a consolidated JSON array of results — one result object per project.
+A new API route `POST /api/batch-validate` accepts an Excel file (same format as `/api/ingest`). It parses the `5a)NDA MPPR` sheet, runs [run_validate()](../rag_function/validate.py#218-277) for every project that has a narrative, and streams back a consolidated JSON array of results — one result object per project.
 
 This is **independent of the ingest route**; it validates straight from the uploaded file without touching the DB write path.
 
@@ -21,7 +21,7 @@ It does not ingest / upsert into PostgreSQL — that is still the job of `/api/i
 ### What it does
 A new **lightweight** API route `POST /api/list-projects` accepts the same Excel file and returns only the list of project names parsed from the `5a)NDA MPPR` sheet — no embeddings, no DB calls.
 
-On the frontend [ValidateView.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/views/ValidateView.tsx):
+On the frontend [ValidateView.tsx](../frontend/src/views/ValidateView.tsx):
 1. An "Upload Excel" button/dropzone appears above the Project Name field.
 2. When the user uploads a file, the frontend calls `/api/list-projects` and populates a `<select>` dropdown with the returned project names.
 3. The period is auto-filled from the filename (e.g. `P08`).
@@ -36,9 +36,9 @@ On the frontend [ValidateView.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project
 
 ---
 
-#### [MODIFY] [ingest.py](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/ingest.py)
+#### [MODIFY] [ingest.py](../rag_function/ingest.py)
 
-Extract a new **public** helper `list_projects_from_bytes(file_bytes, filename)` that calls [parse_excel()](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/ingest.py#89-206) and returns a lightweight list:
+Extract a new **public** helper `list_projects_from_bytes(file_bytes, filename)` that calls [parse_excel()](../rag_function/ingest.py#89-206) and returns a lightweight list:
 ```python
 [{ "project_name": str, "narrative_text": str, "period": str }, ...]
 ```
@@ -46,17 +46,17 @@ This avoids duplicating the parsing logic across routes.
 
 ---
 
-#### [NEW] [batch_validate.py](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/batch_validate.py)
+#### [NEW] [batch_validate.py](../rag_function/batch_validate.py)
 
 New module containing `run_batch_validate(file_bytes, filename, top_k)`:
-1. Calls `list_projects_from_bytes()` from the updated [ingest.py](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/ingest.py) to get all projects + narratives.
-2. For each project that has a `narrative_text`, calls [run_validate()](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/validate.py#218-277) from [validate.py](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/validate.py).
+1. Calls `list_projects_from_bytes()` from the updated [ingest.py](../rag_function/ingest.py) to get all projects + narratives.
+2. For each project that has a `narrative_text`, calls [run_validate()](../rag_function/validate.py#218-277) from [validate.py](../rag_function/validate.py).
 3. Returns a list of result dicts with a `project_name` key prepended to each.
 4. Handles per-project errors gracefully (marks a project as `error: true` without stopping the whole batch).
 
 ---
 
-#### [MODIFY] [function_app.py](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/function_app.py)
+#### [MODIFY] [function_app.py](../rag_function/function_app.py)
 
 Add two new routes:
 
@@ -78,7 +78,7 @@ Add two new routes:
 
 ---
 
-#### [MODIFY] [api.ts](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/services/api.ts)
+#### [MODIFY] [api.ts](../frontend/src/services/api.ts)
 
 Add two new typed API functions:
 - `listProjects(key, file)` → calls `POST /api/list-projects`, returns `{ period, projects }`.
@@ -86,7 +86,7 @@ Add two new typed API functions:
 
 ---
 
-#### [MODIFY] [ValidateView.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/views/ValidateView.tsx)
+#### [MODIFY] [ValidateView.tsx](../frontend/src/views/ValidateView.tsx)
 
 Add at top of the form card, **before** the existing Project Name / Period inputs:
 
@@ -100,7 +100,7 @@ Add at top of the form card, **before** the existing Project Name / Period input
 
 ---
 
-#### [NEW] [BatchValidateView.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/views/BatchValidateView.tsx)
+#### [NEW] [BatchValidateView.tsx](../frontend/src/views/BatchValidateView.tsx)
 
 New view for batch validation:
 - **Left panel**: API Key input + Excel file upload.
@@ -110,13 +110,13 @@ New view for batch validation:
 
 ---
 
-#### [MODIFY] [App.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/App.tsx)
+#### [MODIFY] [App.tsx](../frontend/src/App.tsx)
 
 Register the new `/batch-validate` route pointing to `BatchValidateView`.
 
 ---
 
-#### [MODIFY] [Sidebar.tsx](file:///c:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/frontend/src/components/Sidebar.tsx)
+#### [MODIFY] [Sidebar.tsx](../frontend/src/components/Sidebar.tsx)
 
 Add a "Batch Validate" nav item with an appropriate icon (e.g. `ListChecks` from lucide-react).
 
@@ -127,7 +127,7 @@ Add a "Batch Validate" nav item with an appropriate icon (e.g. `ListChecks` from
 ### Automated (existing test suite)
 Run after backend changes:
 ```powershell
-cd "c:\Users\rahul\Repos\Sentra Project BSBI\Custom Solution"
+cd "<project-root>"
 venv\Scripts\python test_rag.py
 ```
 This validates that the existing DB, embedder, ingest, and validate pipelines still work correctly after the refactor of `ingest.py`.

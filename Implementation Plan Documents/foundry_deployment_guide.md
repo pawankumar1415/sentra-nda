@@ -66,7 +66,7 @@ func azure functionapp publish nda-ingest
 
 ---
 
-## Part 2: Deploy the Agent API Function ([agent/](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/agent/agent_runner.py#95-144))
+## Part 2: Deploy the Agent API Function ([agent/](../agent/agent_runner.py#95-144))
 
 The Agent needs to be exposed as an HTTP API so the frontend and Power Automate can call it.
 
@@ -129,7 +129,7 @@ az role assignment create \
 
 ### 2f. Add an HTTP Endpoint to agent_runner.py
 
-The [agent/](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/agent/agent_runner.py#95-144) folder currently only has a CLI runner. We need to add [function_app.py](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/rag_function/function_app.py) to expose it as an HTTP API:
+The [agent/](../agent/agent_runner.py#95-144) folder currently only has a CLI runner. We need to add [function_app.py](../rag_function/function_app.py) to expose it as an HTTP API:
 
 ```python
 # agent/function_app.py  (NEW FILE TO CREATE)

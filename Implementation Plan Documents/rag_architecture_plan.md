@@ -195,18 +195,18 @@ Custom Solution/
 
 ### Phase 2 — Ingest Route
 - Write `ingest.py`: reuse existing Excel parser → build text chunks → embed → upsert
-- Add `POST /api/ingest` route to [function_app.py](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/azure_function/function_app.py)
+- Add `POST /api/ingest` route to [function_app.py](../azure_function/function_app.py)
 - Test: upload P07 → verify rows in pg with `SELECT count(*) FROM nda_projects`
 
 ### Phase 3 — Validate Route
 - Write `validate.py`: embed query → pgvector cosine search → EAC check → GPT call
 - Structured output format matches current agent response (Layer 1 + Layer 2)
-- Add `POST /api/validate` route to [function_app.py](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/azure_function/function_app.py)
+- Add `POST /api/validate` route to [function_app.py](../azure_function/function_app.py)
 - Test: send a known narrative → verify correct project retrieved + EAC flag applies
 
 ### Phase 4 — Deploy & Wire Up
 - Deploy updated Azure Function
-- Update [local.settings.json](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/agent/local.settings.json) / App Settings with Postgres + OpenAI vars
+- Update [local.settings.json](../agent/local.settings.json) / App Settings with Postgres + OpenAI vars
 - Optionally retire the Azure AI Foundry Agent route once this is stable
 
 ---
@@ -221,4 +221,4 @@ Custom Solution/
 | Index type | `ivfflat` (lists=100) | Good balance of speed vs recall for ~1000 rows |
 | Chunk strategy | One row = one document | Each project row is self-contained |
 | GPT call | Direct `openai` SDK (Azure endpoint) | No LangChain overhead, simpler prompt control |
-| EAC check | Same [tools.py](file:///C:/Users/rahul/Repos/Sentra%20Project%20BSBI/Custom%20Solution/agent/tools.py) functions | Zero code change, already tested |
+| EAC check | Same [tools.py](../agent/tools.py) functions | Zero code change, already tested |

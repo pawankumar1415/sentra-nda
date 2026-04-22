@@ -1,0 +1,154 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="wL_NtP1w1AKCdiFI1xqu" name="Page-1">
+    <mxGraphModel dx="1413" dy="774" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#1F2937;" value="Custom NDA AI Architecture" vertex="1">
+          <mxGeometry height="40" width="1200" x="200" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="sec1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#0078D4;strokeWidth=2;verticalAlign=top;fontSize=13;fontColor=#1F2937;arcSize=4;" value="&lt;b&gt;React Frontend&lt;/b&gt;&lt;br&gt;&lt;i style=&#39;font-size:11px&#39;&gt;(React 19, TypeScript, JWT)&lt;/i&gt;&lt;br&gt;&lt;span style=&#39;font-size:10px;color:#6B7280&#39;&gt;React 19 SPA with JWT authentication calling Python Azure Function backend&lt;/span&gt;" vertex="1">
+          <mxGeometry height="580" width="220" x="40" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="login" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Login View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="admin" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Admin View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="ingest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Ingest View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="validate" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Validate View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="batch" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Batch Validate View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="chat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#0078D4;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Chat View" vertex="1">
+          <mxGeometry height="50" width="140" x="80" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="sec2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#0D9488;strokeWidth=2;verticalAlign=top;fontSize=13;fontColor=#1F2937;arcSize=4;" value="&lt;b&gt;Search &amp;amp; Storage&lt;/b&gt;&lt;br&gt;&lt;i style=&#39;font-size:11px&#39;&gt;(PostgreSQL PGVector, Azure Blob, SharePoint)&lt;/i&gt;&lt;br&gt;&lt;span style=&#39;font-size:10px;color:#6B7280&#39;&gt;PostgreSQL PGVector, Azure Blob Storage and SharePoint for data persistence&lt;/span&gt;" vertex="1">
+          <mxGeometry height="580" width="220" x="300" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="sp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#0D9488;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="SharePoint Library" vertex="1">
+          <mxGeometry height="50" width="140" x="340" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="blobmppr" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#0D9488;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Azure Blob (MPPR File)" vertex="1">
+          <mxGeometry height="50" width="140" x="340" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="blobeac" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#0D9488;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="Azure Blob (EAC File)" vertex="1">
+          <mxGeometry height="50" width="140" x="340" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="pgchat" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#0D9488;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="PostgreSQL (Chat History)" vertex="1">
+          <mxGeometry height="50" width="140" x="340" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="pgvector" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0FDFA;strokeColor=#0D9488;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="PostgreSQL PGVector" vertex="1">
+          <mxGeometry height="50" width="140" x="340" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="sec3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#E97132;strokeWidth=2;verticalAlign=top;fontSize=13;fontColor=#1F2937;arcSize=4;" value="&lt;b&gt;RAG Backend&lt;/b&gt;&lt;br&gt;&lt;i style=&#39;font-size:11px&#39;&gt;(Python, Azure Functions, PostgreSQL)&lt;/i&gt;&lt;br&gt;&lt;span style=&#39;font-size:10px;color:#6B7280&#39;&gt;Handles auth, ingestion, file management and SharePoint integration&lt;/span&gt;" vertex="1">
+          <mxGeometry height="580" width="220" x="560" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="authlogin" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/auth/login" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="mgmt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/mgmt/users" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="ingestapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/ingest" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="ingesteac" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/ingest-eac" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="listproj" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/list-projects" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="spfiles" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/sharepoint/files" vertex="1">
+          <mxGeometry height="50" width="140" x="600" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="sec4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#7B2FBE;strokeWidth=2;verticalAlign=top;fontSize=13;fontColor=#1F2937;arcSize=4;" value="&lt;b&gt;RAG Agent Layer&lt;/b&gt;&lt;br&gt;&lt;i style=&#39;font-size:11px&#39;&gt;(Python, Azure Functions, PostgreSQL PGVector)&lt;/i&gt;&lt;br&gt;&lt;span style=&#39;font-size:10px;color:#6B7280&#39;&gt;Processes queries using vector similarity search and maintains session-based conversation memory&lt;/span&gt;" vertex="1">
+          <mxGeometry height="580" width="220" x="820" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="chatapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/chat" vertex="1">
+          <mxGeometry height="50" width="140" x="860" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="validateapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/validate" vertex="1">
+          <mxGeometry height="50" width="140" x="860" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="batchapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/batch-validate" vertex="1">
+          <mxGeometry height="50" width="140" x="860" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="searchapi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#E97132;strokeWidth=1.5;fontSize=12;fontStyle=1;" value="/search-projects" vertex="1">
+          <mxGeometry height="50" width="140" x="860" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="ann1" parent="1" style="text;html=1;strokeColor=#D1D5DB;fillColor=#F9FAFB;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontColor=#6B7280;fontStyle=2;" value="① User logs in, JWT token stored in browser" vertex="1">
+          <mxGeometry height="40" width="220" x="40" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="ann2" parent="1" style="text;html=1;strokeColor=#D1D5DB;fillColor=#F9FAFB;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontColor=#6B7280;fontStyle=2;" value="② MPPR Excel uploaded, projects extracted and stored in PGVector" vertex="1">
+          <mxGeometry height="40" width="220" x="560" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="ann3" parent="1" style="text;html=1;strokeColor=#D1D5DB;fillColor=#F9FAFB;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontColor=#6B7280;fontStyle=2;" value="③ Narrative matched against indexed projects using cosine similarity" vertex="1">
+          <mxGeometry height="40" width="220" x="820" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="ann4" parent="1" style="text;html=1;strokeColor=#D1D5DB;fillColor=#F9FAFB;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontColor=#6B7280;fontStyle=2;" value="④ Conversation history maintained per session UUID in PostgreSQL" vertex="1">
+          <mxGeometry height="40" width="220" x="300" y="670" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" edge="1" parent="1" source="login" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="authlogin">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="admin" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="mgmt">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="ingest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="ingestapi">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="ingest" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="ingesteac">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="validate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="listproj">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="validate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="spfiles">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="chat" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="chatapi">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="validate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="validateapi">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" edge="1" parent="1" source="batch" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="batchapi">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e10" edge="1" parent="1" source="validate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="searchapi">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" edge="1" parent="1" source="ingestapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="blobmppr">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" edge="1" parent="1" source="ingestapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="pgvector">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" edge="1" parent="1" source="ingesteac" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="blobeac">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" edge="1" parent="1" source="spfiles" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="sp">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" edge="1" parent="1" source="chatapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="pgchat">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" edge="1" parent="1" source="validateapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="pgvector">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" edge="1" parent="1" source="batchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="pgvector">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" edge="1" parent="1" source="searchapi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#374151;strokeWidth=1.5;" target="pgvector">
+          <mxCell id="root" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

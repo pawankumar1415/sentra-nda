@@ -1,11 +1,14 @@
-# NDA MPPR — Azure Function
+# NDA MPPR — Azure Function (Standalone Ingestion)
+
+> **Note:** This is the original standalone ingestion function. The active deployment is the `agent/` folder (`nda-foundry-api`), which includes ingestion, validation, chat, and batch validation in a single Function App. This folder is retained as a reference implementation.
 
 ## What this does
-This Azure Function exposes a single **HTTP POST** endpoint (`/api/process_mppr`) that:
 
-1. Accepts an `.xlsx` file (like P07) as a `multipart/form-data` upload.
+This Azure Function exposes an HTTP POST endpoint (`/api/ingest-mppr`) that:
+
+1. Accepts an `.xlsx` file as a `multipart/form-data` upload.
 2. Parses the **`5a)NDA MPPR`** sheet, columns A → AK, extracting structured project records.
-3. Pushes each record (with `mergeOrUpload`) to an **Azure AI Search** index so Foundry Agents can query it.
+3. Pushes each record (with `mergeOrUpload`) to an **Azure AI Search** index.
 
 ---
 
@@ -21,31 +24,39 @@ azure_function/
 
 ---
 
-## Configuration — what I need from you
+## Authentication
 
-Before running locally or deploying, fill in three values in **`local.settings.json`**:
+This function uses **`DefaultAzureCredential`** (Managed Identity in Azure, `az login` locally). No API keys are stored in code or configuration.
+
+Required RBAC role on the Azure AI Search resource: **Search Index Data Contributor**
+
+---
+
+## Configuration
+
+Fill in `local.settings.json` before running locally. In Azure, set these as Function App Settings.
 
 | Setting | Description |
 |---|---|
-| `AZURE_SEARCH_ENDPOINT` | Your Azure AI Search endpoint URL (e.g. `https://my-search.search.windows.net`) |
-| `AZURE_SEARCH_API_KEY` | An **Admin** API key for the search service |
-| `AZURE_SEARCH_INDEX_NAME` | Name of the target index (default suggestion: `nda-mppr-projects`) |
+| `AZURE_SEARCH_ENDPOINT` | Azure AI Search endpoint URL (e.g. `https://my-search.search.windows.net`) |
+| `AZURE_SEARCH_INDEX_NAME` | Name of the target index (default: `nda-mppr-projects`) |
+| `AZURE_STORAGE_ACCOUNT_URL` | Blob Storage account URL (for EAC variance file) |
+| `AZURE_STORAGE_CONTAINER_NAME` | Blob container name (default: `nda-data`) |
+| `EAC_BLOB_NAME` | EAC variance blob name (default: `lifecycle_eac_variance.xlsx`) |
 
-> **Note:** `local.settings.json` is gitignored by the Azure Functions tooling by default. Never check it in.
-
-When deployed to Azure, these same keys should be added as **Application Settings** on the Function App resource.
+> **Note:** `local.settings.json` is gitignored by default. Never check it in.
 
 ---
 
 ## Azure AI Search Index Schema
 
-You (or a one-time setup script) need to create the index with the following fields before the function runs:
+The index is created automatically on first run via `ensure_index_exists()`. Fields:
 
 | Field | Type | Attributes |
 |---|---|---|
-| `id` | `Edm.String` | **Key** |
-| `ProjectName` | `Edm.String` | Searchable, Filterable |
-| `ReportingPeriod` | `Edm.String` | Filterable, Sortable |
+| `id` | `Edm.String` | Key |
+| `ProjectName` | `Edm.String` | Searchable, Filterable, Sortable |
+| `ReportingPeriod` | `Edm.String` | Filterable, Sortable, Facetable |
 | `DCA_RAG_Status` | `Edm.String` | Filterable, Facetable |
 | `DCA_RAG_Movement` | `Edm.Int32` | Filterable, Sortable |
 | `Baseline_RAG_Status` | `Edm.String` | Filterable, Facetable |
@@ -59,7 +70,7 @@ You (or a one-time setup script) need to create the index with the following fie
 | `CPI` | `Edm.Double` | Filterable |
 | `SPI` | `Edm.Double` | Filterable |
 | `Pct_Complete` | `Edm.Double` | Filterable |
-| `NarrativeText` | `Edm.String` | Searchable |
+| `NarrativeText` | `Edm.String` | Searchable (en.microsoft analyser) |
 
 ---
 
@@ -67,7 +78,7 @@ You (or a one-time setup script) need to create the index with the following fie
 
 ### cURL
 ```bash
-curl -X POST "http://localhost:7071/api/process_mppr" \
+curl -X POST "http://localhost:7071/api/ingest-mppr" \
   -F "file=@P07 Exec Project Summary FINAL.xlsx" \
   -F "reporting_period=P07"
 ```
@@ -78,7 +89,7 @@ import requests
 
 with open("P07 Exec Project Summary FINAL.xlsx", "rb") as f:
     resp = requests.post(
-        "http://localhost:7071/api/process_mppr",
+        "http://localhost:7071/api/ingest-mppr",
         files={"file": f},
         data={"reporting_period": "P07"},
     )

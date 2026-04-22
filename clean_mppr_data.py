@@ -1,10 +1,19 @@
-import pandas as pd
 import json
 import math
+import os
 import sys
 
-file_path = r"C:\Users\rahul\Repos\Sentra Project BSBI\Custom Solution\NDA Data\P07 Exec Project Summary FINAL.xlsx"
-out_json_path = r"C:\Users\rahul\Repos\Sentra Project BSBI\Custom Solution\mppr_cleaned_data.json"
+import pandas as pd
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+file_path = os.environ.get(
+    "MPPR_EXCEL_PATH",
+    os.path.join(_SCRIPT_DIR, "NDA Data", "P07 Exec Project Summary FINAL.xlsx"),
+)
+out_json_path = os.environ.get(
+    "MPPR_OUTPUT_PATH",
+    os.path.join(_SCRIPT_DIR, "mppr_cleaned_data.json"),
+)
 
 def is_nan(val):
     if isinstance(val, float) and math.isnan(val):

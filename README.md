@@ -16,7 +16,7 @@ The system provides **two independent validation approaches** that can be used s
 | **Auth** | JWT login/register, per-user data isolation | Azure Function host key only |
 | **Validation Output** | Structured JSON (scores, issues, rewrite) | Free-form agent analysis |
 | **Memory** | PostgreSQL session history (per user) | Azure Blob Storage conversation blobs |
-| **Search** | PGVector cosine similarity | Azure AI Search (semantic) |
+| **Search** | PGVector cosine similarity | Azure AI Search (keyword + full-text) |
 | **Long-term Memory** | — | Foundry Memory Store (Preview) |
 
 ```
@@ -64,7 +64,8 @@ RAG Function App    Agent Function App
 │   ├── chat.py                     # Conversational chat via Foundry agent
 │   ├── tools.py                    # EAC/schedule tool functions
 │   ├── system_prompt.py            # Agent system prompt
-│   ├── ingest_helper.py            # AI Search indexing
+│   ├── ingest_helper.py            # AI Search indexing + project search
+│   ├── guidance_loader.py          # Loads Good Practice Guidelines from Blob
 │   ├── config.py                   # Centralised configuration
 │   ├── setup_memory.py             # Foundry Memory Store setup CLI
 │   └── local.settings.json         # Dev credentials (gitignored)
@@ -143,28 +144,35 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 | POST | `/api/ingest-eac` | Upload EAC variance Excel → Azure Blob Storage |
 | POST | `/api/validate` | Validate narrative using AI Foundry agent |
 | POST | `/api/batch-validate` | Batch validate all narratives in an Excel file |
+| POST | `/api/chat` | Conversational QA over indexed project data |
+| GET  | `/api/search-projects?q=<term>` | Wildcard search of indexed project names |
 
 ---
 
 ## Conversation Memory
 
-### RAG Function — PostgreSQL Session Memory
+### RAG Function
+
+**Short-term (PostgreSQL session memory)**
 - First `/api/chat` call creates a session UUID scoped to the logged-in user
 - Client stores UUID in `localStorage` and sends it on subsequent calls
 - PostgreSQL `chat_sessions` + `chat_messages` tables store full history
-- Last 20 messages are loaded per LLM call; full history retained for audit
+- Last 20 messages are injected per LLM call; full history retained for audit
 
-### Agent Function — Azure Blob Storage Conversation Memory
-- First `/api/validate` call generates a UUID conversation ID
-- Conversation history stored as JSON blob: `nda-data/conversations/<uuid>.json`
-- Client passes `conversation_id` on follow-up calls to resume context
-- Non-fatal: if blob write fails, validation still completes
+### Agent Function
 
-### Agent Function — Foundry Memory Store (Long-term)
-- Azure AI Foundry Memory Store extracts facts across sessions
-- Recalled via `agent_reference` on every validate call
-- Scoped per user via `user_scope` parameter
-- Setup: run `python agent/setup_memory.py create` once
+**Short-term (Azure Blob Storage)**
+- First `/api/validate` or `/api/chat` call generates a UUID conversation ID
+- Conversation history stored as a JSON blob: `nda-data/conversations/<uuid>.json`
+- Client passes `conversation_id` on follow-up calls to resume context within the same session
+- Non-fatal: if the blob write fails, validation still completes
+
+**Long-term (Azure AI Foundry Memory Store)**
+- Extracts and consolidates key facts across sessions — projects validated, recurring issues, user preferences
+- Recalled automatically via `agent_reference` on every subsequent call; no extra code needed in the caller
+- Scoped per user via the `user_scope` parameter so different users do not share memories
+- Requires an embedding model deployment alongside the chat model
+- Setup: run `python agent/setup_memory.py create` once, or add via the Foundry portal under Memory (Preview)
 
 ---
 
