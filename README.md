@@ -17,7 +17,6 @@ The system provides **two independent validation approaches** that can be used s
 | **Validation Output** | Structured JSON (scores, issues, rewrite) | Free-form agent analysis |
 | **Memory** | PostgreSQL session history (per user) | Azure Blob Storage conversation blobs |
 | **Search** | PGVector cosine similarity | Azure AI Search (keyword + full-text) |
-| **Long-term Memory** | — | Foundry Memory Store (Preview) |
 
 ```
 ┌─────────────────────────────────────────┐
