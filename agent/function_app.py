@@ -25,6 +25,7 @@ from chat import run_chat
 from pgvector_backend import (
     batch_validate_pgvector,
     chat_pgvector,
+    ensure_pgvector_schema,
     ingest_eac_pgvector,
     ingest_mppr_pgvector,
     list_projects_from_bytes as list_projects_pgvector_from_bytes,
@@ -39,6 +40,12 @@ try:
     ensure_index_exists()
 except Exception as _exc:
     logger.warning("Could not auto-create AI Search index on startup: %s", _exc)
+
+# Ensure PGVector schema exists on cold start (no-op if already exists)
+try:
+    ensure_pgvector_schema()
+except Exception as _exc:
+    logger.warning("Could not auto-create PGVector schema on startup: %s", _exc)
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)

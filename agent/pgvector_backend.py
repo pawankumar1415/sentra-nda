@@ -8,6 +8,7 @@ Azure OpenAI chat and embeddings.
 
 from __future__ import annotations
 
+import difflib
 import io
 import json
 import logging
@@ -305,7 +306,6 @@ def list_projects_from_bytes(file_bytes: bytes, filename: str = "") -> Dict:
 
 
 def ingest_mppr_pgvector(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict:
-    ensure_pgvector_schema()
     period, projects = parse_excel(file_bytes, filename=filename)
     if not projects:
         return {
@@ -414,7 +414,6 @@ def parse_eac_excel(file_bytes: bytes) -> List[Dict]:
 
 
 def ingest_eac_pgvector(file_bytes: bytes, user_id: str = "") -> Dict:
-    ensure_pgvector_schema()
     rows = parse_eac_excel(file_bytes)
     upsert_sql = """
         INSERT INTO nda_eac_variance (
@@ -448,7 +447,6 @@ def ingest_eac_pgvector(file_bytes: bytes, user_id: str = "") -> Dict:
 
 
 def search_projects_pgvector(query: str, limit: int = 20) -> List[Dict]:
-    ensure_pgvector_schema()
     sql = """
         SELECT DISTINCT ON (project_name)
                project_name, period_short_name, narrative_text
@@ -570,6 +568,79 @@ Return JSON only with:
 }}"""
 
 
+def _compute_diff_html(original: str, rewritten: str) -> str:
+    """
+    Word-level diff between original and rewritten narrative.
+    Removed words: red strikethrough. Added words: green.
+    Returns an HTML string safe for Power Apps HTML label rendering.
+    """
+    original_words = original.split()
+    rewritten_words = rewritten.split()
+    matcher = difflib.SequenceMatcher(None, original_words, rewritten_words)
+    parts: List[str] = []
+    for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+        if opcode == "equal":
+            parts.append(" ".join(original_words[i1:i2]))
+        elif opcode == "replace":
+            removed = " ".join(original_words[i1:i2])
+            added = " ".join(rewritten_words[j1:j2])
+            parts.append(
+                f'<span style="color:#dc2626;text-decoration:line-through">{removed}</span>'
+                f' <span style="color:#059669">{added}</span>'
+            )
+        elif opcode == "delete":
+            removed = " ".join(original_words[i1:i2])
+            parts.append(
+                f'<span style="color:#dc2626;text-decoration:line-through">{removed}</span>'
+            )
+        elif opcode == "insert":
+            added = " ".join(rewritten_words[j1:j2])
+            parts.append(f'<span style="color:#059669">{added}</span>')
+    return " ".join(parts)
+
+
+def _build_main_result_html(result: Dict) -> str:
+    """Build pre-rendered HTML for the Power Apps HtmlViewer from the structured JSON result."""
+    layer1 = result.get("layer1", {})
+    layer2 = result.get("layer2", {})
+    score = layer1.get("compliance_score", 0)
+    issues = layer1.get("issues", [])
+    passed = layer1.get("passed", [])
+    l2_eac = layer2.get("eac_explained", "not_applicable")
+    l2_sched = layer2.get("schedule_explained", "not_applicable")
+    l2_flag = layer2.get("data_flag", "none")
+    l2_issues = layer2.get("issues", [])
+
+    def _icon(val) -> str:
+        if val is True:
+            return "&#10003;"
+        if val is False:
+            return "&#10007;"
+        return "N/A"
+
+    issues_li = "".join(f"<li>{i}</li>" for i in issues) if issues else "<li>None</li>"
+    passed_li = "".join(f"<li style='color:#059669'>&#10003; {p}</li>" for p in passed) if passed else ""
+    l2_issues_html = (
+        "<br><b>Data Issues:</b><ul>"
+        + "".join(f"<li>{i}</li>" for i in l2_issues)
+        + "</ul>"
+        if l2_issues else ""
+    )
+
+    return (
+        "<b>Layer 1 &#8212; Guidance &amp; Structure</b><br>"
+        f"Compliance Score: <b>{score} / 10</b><br><br>"
+        f"<b>Issues Found:</b><ul>{issues_li}</ul>"
+        + (f"<b>Rules Met:</b><ul>{passed_li}</ul>" if passed_li else "")
+        + "<hr style='border:none;border-top:1px solid #e5e7eb;margin:8px 0'>"
+        "<b>Layer 2 &#8212; Data Validation</b><br>"
+        f"EAC Explained: {_icon(l2_eac)}&nbsp;&nbsp;"
+        f"Schedule Explained: {_icon(l2_sched)}&nbsp;&nbsp;"
+        f"Data Flag: <b>{l2_flag}</b>"
+        + l2_issues_html
+    )
+
+
 def validate_narrative_pgvector(
     project_name: str,
     narrative_text: str,
@@ -577,7 +648,6 @@ def validate_narrative_pgvector(
     conversation_id: Optional[str] = None,
     user_scope: Optional[str] = None,
 ) -> Dict:
-    ensure_pgvector_schema()
     conv_id = conversation_id or str(uuid.uuid4())
     query_vector = embed(narrative_text)
     chunks = _retrieve(query_vector, project_name, top_k=5)
@@ -602,15 +672,24 @@ NARRATIVE TO VALIDATE:
 
 Validate this narrative. Return JSON only."""
 
-    resp = _gpt_client().chat.completions.create(
-        model=_chat_deployment(),
-        messages=[
-            {"role": "system", "content": _VALIDATE_SYSTEM_TEMPLATE.format(guidance=guidance_text)},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=1,
-        response_format={"type": "json_object"},
-    )
+    try:
+        resp = _gpt_client().chat.completions.create(
+            model=_chat_deployment(),
+            messages=[
+                {"role": "system", "content": _VALIDATE_SYSTEM_TEMPLATE.format(guidance=guidance_text)},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=1,
+            response_format={"type": "json_object"},
+        )
+    except Exception as exc:
+        error_msg = str(exc)
+        if "content_filter" in error_msg or "ResponsibleAIPolicyViolation" in error_msg:
+            raise Exception(
+                "Azure OpenAI Content Filter Triggered: The narrative was flagged by "
+                "Microsoft's responsible AI policies. Please revise the narrative and try again."
+            )
+        raise
     raw = resp.choices[0].message.content or "{}"
     try:
         result = json.loads(raw)
@@ -621,8 +700,16 @@ Validate this narrative. Return JSON only."""
             result["overall_verdict"] = "PASS_WITH_WARNINGS"
         else:
             result["overall_verdict"] = "FAIL"
+        rewritten = result.get("rewritten_narrative", "")
+        result["diff_html"] = _compute_diff_html(narrative_text, rewritten) if rewritten else ""
+        result["main_result_html"] = _build_main_result_html(result)
     except json.JSONDecodeError:
-        result = {"raw_response": raw, "parse_error": True}
+        result = {
+            "raw_response": raw,
+            "parse_error": True,
+            "diff_html": "",
+            "main_result_html": "<p style='color:#dc2626'>Failed to parse validation result from AI.</p>",
+        }
 
     result["_meta"] = {
         "project_name": project_name,
@@ -724,33 +811,197 @@ def _save_turn(session_id: str, question: str, answer: str, metadata: Dict) -> N
             cur.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE session_id = %s", (session_id,))
 
 
-def _vector_chat_context(question: str, top_k: int = 5) -> str:
-    query_vector = embed(question)
-    rows = _retrieve(query_vector, None, top_k=top_k)
-    if not rows:
-        return "No matching narrative data found."
-    return "RETRIEVED PROJECT CONTEXT:\n" + "\n\n".join(
-        f"--- {r['project_name']} ({r['period_short_name']}) [Score: {r['score']:.2f}] ---\n{r['raw_content']}"
-        for r in rows
-    )
 
+
+_INTENT_PROMPT = """You are a router. Analyze the user's question about the NDA nuclear decommissioning portfolio and determine the intent.
+Output ONLY a JSON object with two keys:
+1. "intent": string. Choose from:
+   - "portfolio_summary" (asking about overall health, count of red/amber projects, general portfolio status)
+   - "project_query" (asking about a specific project or list of projects)
+   - "eac_query" (asking specifically about financial movements, EAC, or schedule delays)
+   - "general" (greetings, unrelated questions)
+2. "project_names": list of strings. If specific projects are mentioned, list them. Otherwise empty list."""
 
 _CHAT_SYSTEM = """You are the Sentra RAG Assistant, an expert AI analyzing the NDA portfolio.
 Answer based strictly on the provided Context Data. If the context does not contain the answer, say so.
 Return raw compact HTML only. Do not use Markdown or code fences. Do not use <br> tags."""
 
 
+def _detect_intent(question: str) -> Dict[str, Any]:
+    try:
+        resp = _gpt_client().chat.completions.create(
+            model=_chat_deployment(),
+            messages=[
+                {"role": "system", "content": _INTENT_PROMPT},
+                {"role": "user", "content": question},
+            ],
+            response_format={"type": "json_object"},
+        )
+        result = json.loads(resp.choices[0].message.content or "{}")
+        return {
+            "intent": result.get("intent", "general"),
+            "project_names": result.get("project_names", []),
+        }
+    except Exception as exc:
+        logger.error("Intent detection failed: %s", exc)
+        return {"intent": "project_query", "project_names": []}
+
+
+def _get_portfolio_summary() -> str:
+    sql = """
+        SELECT project_name, dca_rag_status, capability_capacity_rag,
+               eac_variance, schedule_variance_days
+        FROM nda_projects
+        WHERE period_short_name = (
+            SELECT period_short_name FROM nda_projects
+            ORDER BY period_short_name DESC LIMIT 1
+        )
+    """
+    context = "LATEST PORTFOLIO DATA:\n"
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+            if not rows:
+                return "No portfolio data available in the database."
+            for r in rows:
+                eac_v = r[3] if r[3] is not None else 0.0
+                sched_v = r[4] if r[4] is not None else 0
+                context += (
+                    f"- {r[0]}: RAG={r[1]}, CapRAG={r[2]}, "
+                    f"EAC Variance=£{eac_v/1_000_000:.2f}m, Schedule Slip={sched_v} days\n"
+                )
+    return context
+
+
+def _get_eac_context(project_names: List[str]) -> str:
+    if not project_names:
+        sql = """
+            SELECT project_name, period_short_name, eac_variance,
+                   schedule_variance_days, summary_text
+            FROM nda_eac_variance
+            ORDER BY abs(eac_variance) DESC LIMIT 10
+        """
+        params: tuple = ()
+    else:
+        sql = """
+            SELECT project_name, period_short_name, eac_variance,
+                   schedule_variance_days, summary_text
+            FROM nda_eac_variance
+            WHERE lower(project_name) LIKE lower(%s)
+            ORDER BY period_short_name DESC LIMIT 5
+        """
+        params = (f"%{project_names[0]}%",)
+
+    context = "EAC & SCHEDULE VARIANCES:\n"
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            if not rows:
+                return "No EAC variance data found."
+            for r in rows:
+                context += (
+                    f"- {r[0]} ({r[1]}): Variance £{r[2]/1_000_000:.2f}m, "
+                    f"Slip {r[3]} days. {r[4]}\n"
+                )
+    return context
+
+
+def _vector_chat_context(
+    question: str,
+    project_names: List[str],
+    top_k: int = 5,
+    periods: Optional[List[str]] = None,
+) -> str:
+    enhanced_query = question
+    if project_names:
+        enhanced_query += " " + " ".join(project_names)
+    query_vector = embed(enhanced_query)
+    context = "RETRIEVED NARRATIVE CONTEXT:\n"
+
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            if periods and project_names:
+                for period in periods:
+                    for pname in project_names:
+                        cur.execute(
+                            """
+                            SELECT project_name, period_short_name, raw_content,
+                                   1 - (embedding <=> %s::vector) AS score
+                            FROM nda_projects
+                            WHERE lower(period_short_name) = lower(%s)
+                              AND lower(project_name) LIKE lower(%s)
+                            ORDER BY embedding <=> %s::vector
+                            LIMIT 1;
+                            """,
+                            (query_vector, period, f"%{pname}%", query_vector),
+                        )
+                        row = cur.fetchone()
+                        if row:
+                            context += f"--- {row[0]} ({row[1]}) [Score: {row[3]:.2f}] ---\n{row[2]}\n\n"
+                if context != "RETRIEVED NARRATIVE CONTEXT:\n":
+                    return context
+
+            cur.execute(
+                """
+                SELECT project_name, period_short_name, raw_content,
+                       1 - (embedding <=> %s::vector) AS score
+                FROM nda_projects
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s;
+                """,
+                (query_vector, query_vector, top_k),
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return "No matching narrative data found."
+            for r in rows:
+                context += f"--- {r[0]} ({r[1]}) [Score: {r[3]:.2f}] ---\n{r[2]}\n\n"
+
+    return context
+
+
 def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
-    ensure_pgvector_schema()
     is_new = False
+
     if session_id and _session_exists(session_id):
         history = _load_history(session_id)
     else:
+        if session_id:
+            logger.warning("session_id %s not found — creating new session", session_id)
         session_id = _create_session()
         history = []
         is_new = True
 
-    context = _vector_chat_context(question)
+    # Detect intent and extract project/period references
+    intent_data = _detect_intent(question)
+    intent = intent_data["intent"]
+    projects = intent_data["project_names"]
+    periods = [m.upper() for m in re.findall(r"\bP\d{2}\b", question, re.IGNORECASE)]
+
+    # Resolve project names from recent history if not found in question
+    if not projects and history:
+        last_assistant = next(
+            (m["content"] for m in reversed(history) if m["role"] == "assistant"), ""
+        )
+        if last_assistant:
+            prior = _detect_intent(last_assistant)
+            projects = prior.get("project_names", [])
+
+    logger.info("pgvector chat — intent: %s, projects: %s, periods: %s, session: %s",
+                intent, projects, periods, session_id)
+
+    # Gather context based on intent
+    if intent == "portfolio_summary":
+        context = _get_portfolio_summary()
+    elif intent == "eac_query":
+        context = _get_eac_context(projects) + "\n\n" + _vector_chat_context(question, projects, top_k=2, periods=periods)
+    elif intent == "general":
+        context = "No specific NDA project context needed for general questions."
+    else:
+        context = _vector_chat_context(question, projects, top_k=5, periods=periods)
+
     messages = [{"role": "system", "content": _CHAT_SYSTEM}]
     messages.extend(history[-20:])
     messages.append({"role": "user", "content": f"CONTEXT DATA:\n{context}\n\nUSER QUESTION:\n{question}"})
@@ -762,9 +1013,10 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     answer = resp.choices[0].message.content or ""
     answer = re.sub(r"<br\s*/?>", "", answer, flags=re.IGNORECASE)
     answer = re.sub(r">\s+<", "><", answer)
+
     meta = {
-        "intent": "pgvector_search",
-        "projects_detected": [],
+        "intent": intent,
+        "projects_detected": projects,
         "context_length": len(context),
         "is_new_session": is_new,
     }
