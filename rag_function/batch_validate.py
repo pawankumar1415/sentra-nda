@@ -81,3 +81,69 @@ def run_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5, us
         "total": len(results),
         "results": results
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Power Automate batch validate — flat csv_rows response
+# Called by POST /api/pa-batch-validate (separate route, existing route untouched)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_pa_batch_validate(file_bytes: bytes, filename: str = "", top_k: int = 5) -> Dict:
+    """
+    Power Automate variant of batch validation.
+
+    Reuses run_batch_validate() internally but transforms the nested per-project
+    result into a flat csv_rows array that Power Automate's 'Create CSV table'
+    action can consume directly, plus summary counts for the email subject/body.
+
+    Existing /api/batch-validate route and run_batch_validate() are untouched.
+    """
+    logger.info("Starting PA batch validation (filename=%s)", filename or "<none>")
+
+    base    = run_batch_validate(file_bytes, filename=filename, top_k=top_k)
+    period  = base.get("period", "")
+    results = base.get("results", [])
+
+    passed = failed = warned = skipped = errors = 0
+    csv_rows = []
+
+    for r in results:
+        verdict = r.get("overall_verdict", "ERROR")
+
+        if verdict == "PASS":
+            passed += 1
+        elif verdict == "FAIL":
+            failed += 1
+        elif verdict in ("WARN", "WARNING"):
+            warned += 1
+        elif verdict == "SKIPPED":
+            skipped += 1
+        else:
+            errors += 1
+
+        layer1_issues = "; ".join(r.get("layer1", {}).get("issues", [])) or "None"
+        layer2_issues = "; ".join(r.get("layer2", {}).get("issues", [])) or "None"
+        score         = r.get("layer1", {}).get("compliance_score", "-")
+
+        csv_rows.append({
+            "Project Name":      r.get("project_name", ""),
+            "Period":            period,
+            "Verdict":           verdict,
+            "Compliance Score":  score,
+            "Layer 1 Issues":    layer1_issues,
+            "Layer 2 Issues":    layer2_issues,
+        })
+
+    overall_status = "PASS" if (failed == 0 and errors == 0) else "FAIL"
+
+    return {
+        "period":         period,
+        "total":          len(results),
+        "passed":         passed,
+        "failed":         failed,
+        "warned":         warned,
+        "skipped":        skipped,
+        "errors":         errors,
+        "overall_status": overall_status,
+        "csv_rows":       csv_rows,
+    }

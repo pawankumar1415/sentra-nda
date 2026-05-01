@@ -20,7 +20,7 @@ import azure.functions as func
 
 from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file, search_projects
 from agent_runner import validate_narrative
-from batch_validate import run_agent_batch_validate
+from batch_validate import run_agent_batch_validate, run_pa_batch_validate
 from chat import run_chat
 from pgvector_backend import (
     batch_validate_pgvector,
@@ -428,6 +428,53 @@ def chat(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json",
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/pa-batch-validate
+# Power Automate route — returns flat csv_rows array + summary counts.
+# Existing /api/batch-validate is untouched.
+# Auth: Function Host Key only (no JWT — triggered by SharePoint, not a user).
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="pa-batch-validate", methods=["POST"])
+def pa_batch_validate(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/pa-batch-validate — Power Automate batch validation endpoint."""
+    logger.info("pa-batch-validate triggered.")
+
+    try:
+        file_bytes: bytes = b""
+        filename:   str   = ""
+
+        if req.files and "file" in req.files:
+            uploaded   = req.files["file"]
+            file_bytes = uploaded.read()
+            filename   = getattr(uploaded, "filename", "") or ""
+        else:
+            file_bytes = req.get_body()
+            filename   = req.params.get("filename", "")
+
+        if not file_bytes:
+            return func.HttpResponse(
+                json.dumps({"error": "No file provided. Send Excel as multipart 'file' or raw body."}),
+                status_code=400,
+                mimetype="application/json",
+            )
+
+        result = run_pa_batch_validate(file_bytes, filename=filename)
+
+    except Exception as exc:
+        logger.exception("PA batch validation failed.")
+        return func.HttpResponse(
+            json.dumps({"error": f"Batch validation failed: {exc}"}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    return func.HttpResponse(
+        json.dumps(result),
+        status_code=200,
+        mimetype="application/json",
+    )
 
 
 @app.route(route="pgvector/ingest-mppr", methods=["POST"])

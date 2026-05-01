@@ -35,7 +35,7 @@ from db import ensure_schema, search_projects
 from ingest import run_ingest, list_projects_from_bytes
 from ingest_eac import run_ingest_eac
 from validate import run_validate
-from batch_validate import run_batch_validate
+from batch_validate import run_batch_validate, run_pa_batch_validate
 from chat import run_chat
 from sharepoint_client import list_files as sp_list_files, download_file as sp_download_file
 
@@ -428,6 +428,39 @@ def sharepoint_list_projects(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logger.exception("sharepoint/list-projects failed: %s", exc)
         return _err("Failed to load projects from SharePoint file.", 500)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/pa-batch-validate
+# Power Automate route — returns flat csv_rows array + summary counts.
+# Existing /api/batch-validate is untouched.
+# Auth: Function Host Key only (no JWT — triggered by SharePoint, not a user).
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="pa-batch-validate", methods=["POST"])
+def pa_batch_validate(req: func.HttpRequest) -> func.HttpResponse:
+    """POST /api/pa-batch-validate — Power Automate batch validation endpoint."""
+    try:
+        file_bytes: bytes = b""
+        filename:   str   = ""
+        files = req.files
+        if files and "file" in files:
+            uploaded   = files["file"]
+            file_bytes = uploaded.read()
+            filename   = getattr(uploaded, "filename", "") or ""
+        else:
+            file_bytes = req.get_body()
+            filename   = req.params.get("filename", "")
+
+        if not file_bytes:
+            return _err("No file provided.", 400)
+
+        top_k  = int(req.params.get("top_k", 5))
+        result = run_pa_batch_validate(file_bytes, filename=filename, top_k=top_k)
+        return _ok(result)
+
+    except Exception as exc:
+        logger.exception("PA batch validate failed: %s", exc)
+        return _err("Internal error", 500)
 
 
 @app.route(route="batch-validate", methods=["POST"])

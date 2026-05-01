@@ -181,3 +181,119 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
         "total":   len(results),
         "results": results,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Power Automate batch validate — flat csv_rows response
+# Called by POST /api/pa-batch-validate (separate route, existing route untouched)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _verdict_from_text(text: str) -> str:
+    """Best-effort verdict extraction from free-form agent prose."""
+    upper = text.upper()
+    # Explicit verdict lines take priority
+    for prefix in ("OVERALL: PASS", "VERDICT: PASS", "OVERALL VERDICT: PASS"):
+        if prefix in upper:
+            return "PASS"
+    for prefix in ("OVERALL: FAIL", "VERDICT: FAIL", "OVERALL VERDICT: FAIL"):
+        if prefix in upper:
+            return "FAIL"
+    for prefix in ("OVERALL: WARN", "VERDICT: WARN", "OVERALL VERDICT: WARN"):
+        if prefix in upper:
+            return "WARN"
+    # Fallback keyword scan
+    if "FAIL" in upper:
+        return "FAIL"
+    if "WARNING" in upper or "WARN" in upper:
+        return "WARN"
+    if "PASS" in upper:
+        return "PASS"
+    return "UNKNOWN"
+
+
+def _issues_from_text(text: str) -> str:
+    """Extract bullet / numbered issue lines from free-form agent prose."""
+    issues = []
+    for line in text.split("\n"):
+        s = line.strip()
+        if not s:
+            continue
+        is_bullet = s[0] in ("-", "•", "*", "–")
+        is_numbered = len(s) > 2 and s[0].isdigit() and s[1] in ".)"
+        has_issue_kw = any(kw in s.lower() for kw in (
+            "issue", "missing", "incorrect", "should", "must",
+            "lacks", "not mentioned", "failed to", "no reference",
+        ))
+        if is_bullet or is_numbered or has_issue_kw:
+            clean = s.lstrip("-•*–0123456789.) ").strip()
+            if clean:
+                issues.append(clean)
+    return "; ".join(issues) if issues else "None"
+
+
+def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
+    """
+    Power Automate variant of batch validation.
+
+    Runs the same validation pipeline as run_agent_batch_validate() but returns
+    a flat csv_rows array that Power Automate's 'Create CSV table' action can
+    consume directly, plus summary counts for the email subject/body.
+
+    Existing /api/batch-validate route and run_agent_batch_validate() are
+    completely untouched.
+    """
+    logger.info("Starting PA batch validation (filename=%s)", filename or "<none>")
+
+    base = run_agent_batch_validate(file_bytes, filename=filename)
+    period  = base.get("period", "")
+    results = base.get("results", [])
+
+    csv_rows = []
+    passed = failed = warned = skipped = errors = 0
+
+    for r in results:
+        status = r.get("status", "error")
+
+        if status == "skipped":
+            verdict = "SKIPPED"
+            skipped += 1
+            layer1_issues = "No narrative text in file"
+            layer2_issues = "N/A"
+        elif status == "error":
+            verdict = "ERROR"
+            errors += 1
+            layer1_issues = r.get("validation_result", "Validation error")
+            layer2_issues = "N/A"
+        else:
+            raw_text = r.get("validation_result", "")
+            verdict  = _verdict_from_text(raw_text)
+            layer1_issues = _issues_from_text(raw_text)
+            layer2_issues = "None"
+            if verdict == "PASS":
+                passed += 1
+            elif verdict == "FAIL":
+                failed += 1
+            else:
+                warned += 1
+
+        csv_rows.append({
+            "Project Name":     r.get("project_name", ""),
+            "Period":           period,
+            "Verdict":          verdict,
+            "Layer 1 Issues":   layer1_issues,
+            "Layer 2 Issues":   layer2_issues,
+        })
+
+    overall_status = "PASS" if (failed == 0 and errors == 0) else "FAIL"
+
+    return {
+        "period":         period,
+        "total":          len(results),
+        "passed":         passed,
+        "failed":         failed,
+        "warned":         warned,
+        "skipped":        skipped,
+        "errors":         errors,
+        "overall_status": overall_status,
+        "csv_rows":       csv_rows,
+    }
