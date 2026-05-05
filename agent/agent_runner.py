@@ -411,7 +411,6 @@ def _run_with_responses_api(
     instructions = instructions_override or get_system_prompt()
 
     response = openai_client.responses.create(
-        model=MODEL_DEPLOYMENT_NAME,
         instructions=instructions,
         tools=openai_tools,
         input=input_items,
