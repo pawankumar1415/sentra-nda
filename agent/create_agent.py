@@ -16,7 +16,7 @@ if settings.exists():
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from azure.ai.projects import AIProjectClient
+from azure.ai.agents import AgentsClient
 from azure.ai.agents.models import FunctionTool
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 
@@ -42,11 +42,11 @@ print(f"Endpoint : {PROJECT_ENDPOINT}")
 print(f"Model    : {MODEL_DEPLOYMENT_NAME}")
 print(f"Agent    : {AGENT_NAME}\n")
 
-client = AIProjectClient(endpoint=PROJECT_ENDPOINT, credential=credential)
+client = AgentsClient(endpoint=PROJECT_ENDPOINT, credential=credential)
 
 # ── Check if already exists ───────────────────────────────────────────────────
 print("Checking for existing agent...")
-for agent in client.agents.list():
+for agent in client.list_agents():
     if agent.name == AGENT_NAME:
         print(f"Agent '{AGENT_NAME}' already exists — id={agent.id}")
         print("Nothing to do.")
@@ -59,9 +59,9 @@ ft = FunctionTool(functions={check_eac_variance, list_projects_with_material_mov
 instructions = get_system_prompt()
 print(f"System prompt: {len(instructions)} chars")
 
-# ── Create agent (same call as debug_agent_run.py, minus the delete) ─────────
+# ── Create agent ──────────────────────────────────────────────────────────────
 print(f"\nCreating agent '{AGENT_NAME}'...")
-agent = client.agents._create_agent(
+agent = client.create_agent(
     model=MODEL_DEPLOYMENT_NAME,
     name=AGENT_NAME,
     instructions=instructions,
