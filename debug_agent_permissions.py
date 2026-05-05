@@ -67,7 +67,7 @@ else:
 # ── TEST 3: List existing agents ──────────────────────────────────────────────
 print("\n[3] Azure AI Foundry — Listing agents (requires Azure AI Developer role)...")
 try:
-    agents = list(client.agents.list_agents())
+    agents = list(client.agents.list())
     print(f"  ✅ Found {len(agents)} agent(s) in the project:")
     for a in agents:
         print(f"      • {a.name} (id={a.id})")

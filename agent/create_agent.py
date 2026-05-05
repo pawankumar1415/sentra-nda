@@ -61,7 +61,7 @@ print(f"System prompt: {len(instructions)} chars")
 
 # ── Create agent (same call as debug_agent_run.py, minus the delete) ─────────
 print(f"\nCreating agent '{AGENT_NAME}'...")
-agent = client.agents.create_agent(
+agent = client.agents._create_agent(
     model=MODEL_DEPLOYMENT_NAME,
     name=AGENT_NAME,
     instructions=instructions,

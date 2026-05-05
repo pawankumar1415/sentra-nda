@@ -58,7 +58,7 @@ def run_test(label, tools, instructions, message):
     kwargs = dict(model=model, name=f"debug-{int(time.time())}", instructions=instructions)
     if tools:
         kwargs["tools"] = tools
-    agent = client.agents.create_agent(**kwargs)
+    agent = client.agents._create_agent(**kwargs)
     print(f"  Agent created: {agent.id}")
 
     try:
@@ -89,7 +89,7 @@ def run_test(label, tools, instructions, message):
                 print(f"     code={err.code} | message={err.message}")
             return False
     finally:
-        client.agents.delete_agent(agent.id)
+        client.agents.delete(agent.id)
         print(f"  Agent deleted\n")
 
 
