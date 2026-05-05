@@ -226,21 +226,25 @@ def _issues_from_text(text: str, max_issues: int = 5) -> str:
     """
     Extract only the hard-fail (❌) lines from agent prose.
     Falls back to ⚠️ lines if no ❌ found.
-    Strips markdown bold markers and caps at max_issues.
+    Strips markdown bullet prefixes (- * •), bold markers, and caps at max_issues.
+    The agent formats issues as '- ❌ ...' so we must strip the bullet first.
     """
     fail_lines: List[str] = []
     warn_lines: List[str] = []
 
     for line in text.split("\n"):
-        s = line.strip()
+        # Strip whitespace then any leading bullet/list markers
+        s = re.sub(r"^[\-\*•]+\s*", "", line.strip()).strip()
         if not s:
             continue
         if s.startswith("❌"):
-            clean = re.sub(r"\*+", "", s.lstrip("❌ ")).strip()
+            clean = re.sub(r"^❌\s*", "", s)
+            clean = re.sub(r"\*+", "", clean).strip()
             if clean:
                 fail_lines.append(clean)
         elif s.startswith("⚠️"):
-            clean = re.sub(r"\*+", "", s.lstrip("⚠️ ")).strip()
+            clean = re.sub(r"^⚠️\s*", "", s)
+            clean = re.sub(r"\*+", "", clean).strip()
             if clean:
                 warn_lines.append(clean)
 
@@ -278,6 +282,7 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
 
     for r in results:
         status = r.get("status", "error")
+        score  = None  # reset each iteration so skipped/error rows show "-"
 
         if status == "skipped":
             verdict = "SKIPPED"
