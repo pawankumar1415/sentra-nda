@@ -390,16 +390,6 @@ def _run_with_responses_api(
     """
     openai_tools = _build_responses_api_tools()
 
-    # Build the extra_body to wire up the agent (and its attached Memory Store)
-    extra_body: dict = {
-        "agent_reference": {
-            "name": AGENT_NAME,
-            "type": "agent_reference",
-        },
-    }
-    if user_scope:
-        extra_body["memory_scope"] = user_scope
-
     # Build `input` as prior history + current user message.
     # Each item follows the Responses API input item format.
     input_items: list = [
@@ -411,10 +401,10 @@ def _run_with_responses_api(
     instructions = instructions_override or get_system_prompt()
 
     response = openai_client.responses.create(
+        model=MODEL_DEPLOYMENT_NAME,
         instructions=instructions,
         tools=openai_tools,
         input=input_items,
-        extra_body=extra_body,
     )
 
     # ── Tool-call loop ────────────────────────────────────────────────────────
@@ -447,7 +437,6 @@ def _run_with_responses_api(
             tools=openai_tools,
             input=tool_outputs,
             previous_response_id=response.id,
-            extra_body=extra_body,
         )
 
     # ── Extract text from the final response ─────────────────────────────────
