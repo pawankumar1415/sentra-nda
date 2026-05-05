@@ -2,18 +2,16 @@
 agent/create_agent.py — One-time setup script to create the NDA Narrative Validator agent
 in Azure AI Foundry.
 
-Run this ONCE from the agent/ directory (or repo root) after filling in local.settings.json:
+Run this ONCE from the agent/ directory:
 
-    venv\\Scripts\\python agent\\create_agent.py
+    venv\\Scripts\\python create_agent.py
 
 What it does:
   1. Connects to your Azure AI Foundry project.
   2. Checks if 'nda-narrative-validator-v3' already exists — skips creation if so.
   3. Creates the agent with the correct name, system prompt, and function tools.
-  4. Prints the agent ID — the Responses API agent_reference resolves by name,
-     so you don't need to store this anywhere in code.
 
-Required env vars (loaded from agent/local.settings.json automatically):
+Required env vars (loaded from local.settings.json automatically):
     AZURE_FOUNDRY_PROJECT_ENDPOINT
     AZURE_FOUNDRY_MODEL_DEPLOYMENT
 """
@@ -25,12 +23,8 @@ import os
 import pathlib
 import sys
 
-# ── Load agent/local.settings.json ───────────────────────────────────────────
+# ── Load local.settings.json ─────────────────────────────────────────────────
 settings_path = pathlib.Path(__file__).parent / "local.settings.json"
-if not settings_path.exists():
-    # Try one level up (if run from repo root)
-    settings_path = pathlib.Path(__file__).parent.parent / "agent" / "local.settings.json"
-
 if settings_path.exists():
     with open(settings_path, encoding="utf-8") as f:
         for key, value in json.load(f).get("Values", {}).items():
@@ -39,7 +33,7 @@ if settings_path.exists():
 else:
     print("local.settings.json not found — relying on environment variables\n")
 
-# Add agent/ to path so imports work when run from repo root
+# Add agent/ to path
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
 from azure.ai.projects import AIProjectClient
@@ -76,22 +70,10 @@ def create_agent() -> None:
     print("Checking for existing agent...")
     existing = None
     try:
-        # SDK method is .list() in newer azure-ai-projects versions
         for agent in client.agents.list():
             if agent.name == AGENT_NAME:
                 existing = agent
                 break
-    except AttributeError:
-        # Fallback for older SDK versions
-        try:
-            for agent in client.agents.list_agents():
-                if agent.name == AGENT_NAME:
-                    existing = agent
-                    break
-        except Exception as exc:
-            print(f"Could not list agents: {exc}")
-            print("Ensure 'Azure AI Developer' role is assigned to your identity on the Foundry project.")
-            sys.exit(1)
     except Exception as exc:
         print(f"Could not list agents: {exc}")
         print("Ensure 'Azure AI Developer' role is assigned to your identity on the Foundry project.")
@@ -101,8 +83,7 @@ def create_agent() -> None:
         print(f"Agent '{AGENT_NAME}' already exists.")
         print(f"  ID    : {existing.id}")
         print(f"  Model : {existing.model}")
-        print("\nNo action taken. To recreate it, delete it first via the portal or run:")
-        print("  client.agents.delete_agent(agent_id='...')")
+        print("\nNo action taken. To recreate: delete it via portal then re-run this script.")
         return
 
     # ── Build tool definitions ─────────────────────────────────────────────────
@@ -110,13 +91,13 @@ def create_agent() -> None:
     ft = FunctionTool(functions={check_eac_variance, list_projects_with_material_movements})
 
     # ── Load system prompt ─────────────────────────────────────────────────────
-    print("Loading system prompt from blob storage (or fallback)...")
+    print("Loading system prompt...")
     instructions = get_system_prompt()
     print(f"System prompt: {len(instructions)} chars / ~{len(instructions)//4} tokens")
 
     # ── Create the agent ───────────────────────────────────────────────────────
     print(f"\nCreating agent '{AGENT_NAME}'...")
-    agent = client.agents.create_agent(
+    agent = client.agents.create(
         model=MODEL_DEPLOYMENT_NAME,
         name=AGENT_NAME,
         instructions=instructions,
@@ -133,10 +114,9 @@ def create_agent() -> None:
     print(f"  ID    : {agent.id}")
     print(f"  Model : {agent.model}")
     print(f"\nNext steps:")
-    print(f"  1. Go to AI Foundry portal — the agent should now appear in the Agents list.")
+    print(f"  1. Go to AI Foundry portal — '{AGENT_NAME}' should now appear in the Agents list.")
     print(f"  2. Deploy the function app: func azure functionapp publish nda-foundry-api")
-    print(f"  3. The Responses API agent_reference lookup uses the name '{AGENT_NAME}' —")
-    print(f"     no code changes needed.")
+    print(f"  3. The agent_reference in agent_runner.py resolves by name — no code changes needed.")
 
 
 if __name__ == "__main__":
