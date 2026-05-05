@@ -76,10 +76,22 @@ def create_agent() -> None:
     print("Checking for existing agent...")
     existing = None
     try:
-        for agent in client.agents.list_agents():
+        # SDK method is .list() in newer azure-ai-projects versions
+        for agent in client.agents.list():
             if agent.name == AGENT_NAME:
                 existing = agent
                 break
+    except AttributeError:
+        # Fallback for older SDK versions
+        try:
+            for agent in client.agents.list_agents():
+                if agent.name == AGENT_NAME:
+                    existing = agent
+                    break
+        except Exception as exc:
+            print(f"Could not list agents: {exc}")
+            print("Ensure 'Azure AI Developer' role is assigned to your identity on the Foundry project.")
+            sys.exit(1)
     except Exception as exc:
         print(f"Could not list agents: {exc}")
         print("Ensure 'Azure AI Developer' role is assigned to your identity on the Foundry project.")
