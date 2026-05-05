@@ -648,7 +648,8 @@ def validate_narrative_pgvector(
     conversation_id: Optional[str] = None,
     user_scope: Optional[str] = None,
 ) -> Dict:
-    conv_id = conversation_id or str(uuid.uuid4())
+    from agent_runner import validate_narrative as _agent_validate
+
     query_vector = embed(narrative_text)
     chunks = _retrieve(query_vector, project_name, top_k=5)
     eac_data = _load_eac_data(project_name, period)
@@ -658,9 +659,11 @@ def validate_narrative_pgvector(
         for c in chunks
     )
     guidance_text, guidance_source = get_guidance_text()
-    user_message = f"""PROJECT: {project_name}
 
-RETRIEVED DATA CONTEXT:
+    # Inject PGVector context into the narrative passed to the Foundry Agent.
+    # The agent receives the full context but uses the JSON system prompt below
+    # so it returns structured output identical to the previous direct GPT call.
+    enriched_narrative = f"""RETRIEVED DATA CONTEXT:
 {chunks_text}
 
 EAC / SCHEDULE MOVEMENT DATA:
@@ -668,29 +671,22 @@ EAC / SCHEDULE MOVEMENT DATA:
 EAC variance flag: {eac_data['flag']}
 
 NARRATIVE TO VALIDATE:
-{narrative_text}
+{narrative_text}"""
 
-Validate this narrative. Return JSON only."""
+    agent_response = _agent_validate(
+        project_name=project_name,
+        narrative_text=enriched_narrative,
+        period=period,
+        conversation_id=conversation_id,
+        user_scope=user_scope,
+        instructions_override=_VALIDATE_SYSTEM_TEMPLATE.format(guidance=guidance_text),
+    )
 
-    try:
-        resp = _gpt_client().chat.completions.create(
-            model=_chat_deployment(),
-            messages=[
-                {"role": "system", "content": _VALIDATE_SYSTEM_TEMPLATE.format(guidance=guidance_text)},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=1,
-            response_format={"type": "json_object"},
-        )
-    except Exception as exc:
-        error_msg = str(exc)
-        if "content_filter" in error_msg or "ResponsibleAIPolicyViolation" in error_msg:
-            raise Exception(
-                "Azure OpenAI Content Filter Triggered: The narrative was flagged by "
-                "Microsoft's responsible AI policies. Please revise the narrative and try again."
-            )
-        raise
-    raw = resp.choices[0].message.content or "{}"
+    raw = agent_response.get("validation_result", "{}")
+    # Strip markdown code fences the agent may wrap around the JSON
+    raw = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
+    raw = re.sub(r"\s*```$", "", raw.strip())
+
     try:
         result = json.loads(raw)
         score = result.get("layer1", {}).get("compliance_score", 0)
@@ -721,9 +717,9 @@ Validate this narrative. Return JSON only."""
         "guidance_source": guidance_source,
     }
     return {
-        "conversation_id": conv_id,
-        "is_new_conversation": conversation_id is None,
-        "validation_result": json.dumps(result, ensure_ascii=False, indent=2),
+        "conversation_id":     agent_response["conversation_id"],
+        "is_new_conversation": agent_response["is_new_conversation"],
+        "validation_result":   json.dumps(result, ensure_ascii=False, indent=2),
     }
 
 
@@ -1002,23 +998,10 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     else:
         context = _vector_chat_context(question, projects, top_k=5, periods=periods)
 
-    messages = [{"role": "system", "content": _CHAT_SYSTEM}]
-    messages.extend(history[-20:])
-    messages.append({"role": "user", "content": f"CONTEXT DATA:\n{context}\n\nUSER QUESTION:\n{question}"})
+    from chat import run_chat as _agent_chat
 
-    resp = _gpt_client().chat.completions.create(
-        model=_chat_deployment(),
-        messages=messages,
-    )
-    answer = resp.choices[0].message.content or ""
-    answer = re.sub(r"<br\s*/?>", "", answer, flags=re.IGNORECASE)
-    answer = re.sub(r">\s+<", "><", answer)
+    # Prepend the PGVector context to the question so the Foundry Agent
+    # has it available alongside any context it retrieves from AI Search.
+    enriched_question = f"[PGVECTOR CONTEXT]\n{context}\n\n[USER QUESTION]\n{question}"
 
-    meta = {
-        "intent": intent,
-        "projects_detected": projects,
-        "context_length": len(context),
-        "is_new_session": is_new,
-    }
-    _save_turn(session_id, question, answer, meta)
-    return {"answer": answer, "session_id": session_id, "meta": meta}
+    return _agent_chat(question=enriched_question, session_id=session_id)

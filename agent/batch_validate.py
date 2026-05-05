@@ -29,7 +29,7 @@ from __future__ import annotations
 import io
 import logging
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import pandas as pd
 
@@ -188,47 +188,72 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
 # Called by POST /api/pa-batch-validate (separate route, existing route untouched)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _score_from_text(text: str) -> Optional[int]:
+    """Extract compliance score from 'Compliance Score: N/10' pattern."""
+    m = re.search(r"compliance score[:\s*]+(\d+)\s*/\s*10", text, re.IGNORECASE)
+    return int(m.group(1)) if m else None
+
+
 def _verdict_from_text(text: str) -> str:
-    """Best-effort verdict extraction from free-form agent prose."""
-    upper = text.upper()
-    # Explicit verdict lines take priority
-    for prefix in ("OVERALL: PASS", "VERDICT: PASS", "OVERALL VERDICT: PASS"):
-        if prefix in upper:
+    """
+    Derive PASS/WARN/FAIL from the agent's free-form prose.
+    Uses compliance score as primary signal (most reliable);
+    falls back to explicit verdict keywords.
+    """
+    score = _score_from_text(text)
+    if score is not None:
+        if score >= 8:
             return "PASS"
-    for prefix in ("OVERALL: FAIL", "VERDICT: FAIL", "OVERALL VERDICT: FAIL"):
-        if prefix in upper:
-            return "FAIL"
-    for prefix in ("OVERALL: WARN", "VERDICT: WARN", "OVERALL VERDICT: WARN"):
-        if prefix in upper:
+        elif score >= 6:
             return "WARN"
-    # Fallback keyword scan
-    if "FAIL" in upper:
-        return "FAIL"
-    if "WARNING" in upper or "WARN" in upper:
-        return "WARN"
-    if "PASS" in upper:
-        return "PASS"
+        else:
+            return "FAIL"
+
+    upper = text.upper()
+    for phrase in ("OVERALL VERDICT: PASS", "VERDICT: PASS", "OVERALL: PASS"):
+        if phrase in upper:
+            return "PASS"
+    for phrase in ("OVERALL VERDICT: FAIL", "VERDICT: FAIL", "OVERALL: FAIL"):
+        if phrase in upper:
+            return "FAIL"
+    for phrase in ("OVERALL VERDICT: WARN", "VERDICT: WARN", "OVERALL: WARN"):
+        if phrase in upper:
+            return "WARN"
     return "UNKNOWN"
 
 
-def _issues_from_text(text: str) -> str:
-    """Extract bullet / numbered issue lines from free-form agent prose."""
-    issues = []
+def _issues_from_text(text: str, max_issues: int = 5) -> str:
+    """
+    Extract only the hard-fail (❌) lines from agent prose.
+    Falls back to ⚠️ lines if no ❌ found.
+    Strips markdown bold markers and caps at max_issues.
+    """
+    fail_lines: List[str] = []
+    warn_lines: List[str] = []
+
     for line in text.split("\n"):
         s = line.strip()
         if not s:
             continue
-        is_bullet = s[0] in ("-", "•", "*", "–")
-        is_numbered = len(s) > 2 and s[0].isdigit() and s[1] in ".)"
-        has_issue_kw = any(kw in s.lower() for kw in (
-            "issue", "missing", "incorrect", "should", "must",
-            "lacks", "not mentioned", "failed to", "no reference",
-        ))
-        if is_bullet or is_numbered or has_issue_kw:
-            clean = s.lstrip("-•*–0123456789.) ").strip()
+        if s.startswith("❌"):
+            clean = re.sub(r"\*+", "", s.lstrip("❌ ")).strip()
             if clean:
-                issues.append(clean)
-    return "; ".join(issues) if issues else "None"
+                fail_lines.append(clean)
+        elif s.startswith("⚠️"):
+            clean = re.sub(r"\*+", "", s.lstrip("⚠️ ")).strip()
+            if clean:
+                warn_lines.append(clean)
+
+    issues = fail_lines if fail_lines else warn_lines
+    if not issues:
+        return "None"
+
+    if len(issues) > max_issues:
+        trimmed = issues[:max_issues]
+        trimmed.append(f"...and {len(issues) - max_issues} more")
+        return "; ".join(trimmed)
+
+    return "; ".join(issues)
 
 
 def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
@@ -267,6 +292,7 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
         else:
             raw_text = r.get("validation_result", "")
             verdict  = _verdict_from_text(raw_text)
+            score    = _score_from_text(raw_text)
             layer1_issues = _issues_from_text(raw_text)
             layer2_issues = "None"
             if verdict == "PASS":
@@ -277,11 +303,12 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 warned += 1
 
         csv_rows.append({
-            "Project Name":     r.get("project_name", ""),
-            "Period":           period,
-            "Verdict":          verdict,
-            "Layer 1 Issues":   layer1_issues,
-            "Layer 2 Issues":   layer2_issues,
+            "Project Name":      r.get("project_name", ""),
+            "Period":            period,
+            "Verdict":           verdict,
+            "Compliance Score":  score if score is not None else "-",
+            "Layer 1 Issues":    layer1_issues,
+            "Layer 2 Issues":    layer2_issues,
         })
 
     overall_status = "PASS" if (failed == 0 and errors == 0) else "FAIL"

@@ -285,6 +285,7 @@ def validate_narrative(
     period: str,
     conversation_id: Optional[str] = None,
     user_scope: Optional[str] = None,
+    instructions_override: Optional[str] = None,
 ) -> dict:
     """
     Validate a project narrative using the Azure AI Foundry agent with
@@ -335,14 +336,16 @@ def validate_narrative(
     # ── Run validation (primary: Responses API; fallback: Chat Completions) ──
     try:
         result_text = _run_with_responses_api(
-            openai_client, user_prompt, prior_history, user_scope
+            openai_client, user_prompt, prior_history, user_scope,
+            instructions_override=instructions_override,
         )
     except Exception as e:
         logger.warning(
             "Responses API failed (%s) — falling back to Chat Completions", e
         )
         result_text = _run_with_chat_completions_with_history(
-            openai_client, user_prompt, prior_history
+            openai_client, user_prompt, prior_history,
+            instructions_override=instructions_override,
         )
 
     # ── Persist the updated conversation history ───────────────────────────────
@@ -372,6 +375,7 @@ def _run_with_responses_api(
     user_prompt: str,
     prior_history: List[dict],
     user_scope: Optional[str],
+    instructions_override: Optional[str] = None,
 ) -> str:
     """
     Primary execution path using the OpenAI Responses API.
@@ -404,9 +408,11 @@ def _run_with_responses_api(
     ]
     input_items.append({"type": "message", "role": "user", "content": user_prompt})
 
+    instructions = instructions_override or get_system_prompt()
+
     response = openai_client.responses.create(
         model=MODEL_DEPLOYMENT_NAME,
-        instructions=get_system_prompt(),
+        instructions=instructions,
         tools=openai_tools,
         input=input_items,
         extra_body=extra_body,
@@ -438,7 +444,7 @@ def _run_with_responses_api(
 
         response = openai_client.responses.create(
             model=MODEL_DEPLOYMENT_NAME,
-            instructions=get_system_prompt(),
+            instructions=instructions,
             tools=openai_tools,
             input=tool_outputs,
             previous_response_id=response.id,
@@ -464,6 +470,7 @@ def _run_with_chat_completions_with_history(
     openai_client,
     user_prompt: str,
     prior_history: List[dict],
+    instructions_override: Optional[str] = None,
 ) -> str:
     """
     Fallback execution path using the Chat Completions API.
@@ -480,7 +487,7 @@ def _run_with_chat_completions_with_history(
     openai_tools = _build_chat_completions_tools()
 
     # ── Build messages list ───────────────────────────────────────────────────
-    messages: list[dict] = [{"role": "system", "content": get_system_prompt()}]
+    messages: list[dict] = [{"role": "system", "content": instructions_override or get_system_prompt()}]
     messages.extend(prior_history)
     messages.append({"role": "user", "content": user_prompt})
 
