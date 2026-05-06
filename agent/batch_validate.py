@@ -152,6 +152,7 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 "status":            "skipped",
                 "validation_result": "No narrative text in the Excel file for this project.",
                 "conversation_id":   None,
+                "narrative_text":    "",
             })
             continue
 
@@ -166,6 +167,7 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 "status":            "ok",
                 "validation_result": val["validation_result"],
                 "conversation_id":   val["conversation_id"],
+                "narrative_text":    narrative_text,
             })
         except Exception as exc:
             logger.exception("Agent validation failed for %s", project_name)
@@ -174,6 +176,7 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 "status":            "error",
                 "validation_result": f"Validation error: {exc}",
                 "conversation_id":   None,
+                "narrative_text":    narrative_text,
             })
 
     return {
@@ -279,36 +282,41 @@ def _issues_from_text(text: str, max_issues: int = 5) -> str:
 
 def _layer2_issues_from_text(text: str) -> str:
     """
-    Extract Layer 2 data issues (EAC/schedule) from agent prose.
-    Looks for lines inside the Layer 2 section that start with ❌ or ⚠️.
-    Returns "None" if no data issues found (i.e. data checks passed).
+    Extract Layer 2 data issues from agent prose.
+    The agent formats Layer 2 as:
+      - EAC Movement: [value] -> NOT EXPLAINED in narrative
+      - Schedule Movement: [value] -> NOT EXPLAINED in narrative
+      - RAG Change: [value] -> NOT ADDRESSED
+    Only lines containing NOT EXPLAINED or NOT ADDRESSED are real issues.
     """
-    # Find the Layer 2 section — everything after a Layer 2 heading
-    m = re.search(r"layer\s*2[^\n]*\n(.+)", text, re.IGNORECASE | re.DOTALL)
-    section = m.group(1) if m else text
-
-    fail_lines: List[str] = []
-    warn_lines: List[str] = []
-
-    for line in section.split("\n"):
-        s = re.sub(r"^[\-\*•]+\s*", "", line.strip()).strip()
-        if not s:
-            continue
-        if s.startswith("❌"):
-            clean = re.sub(r"^❌\s*", "", s)
-            clean = re.sub(r"\*+", "", clean).strip()
-            if clean:
-                fail_lines.append(clean)
-        elif s.startswith("⚠️"):
-            clean = re.sub(r"^⚠️\s*", "", s)
-            clean = re.sub(r"\*+", "", clean).strip()
-            if clean:
-                warn_lines.append(clean)
-
-    issues = fail_lines if fail_lines else warn_lines
-    if not issues:
+    m = re.search(
+        r"\*\*Layer 2[^\n]*\n(.+?)(?=\*\*Suggested|\*\*Overall|^---|\Z)",
+        text, re.IGNORECASE | re.DOTALL | re.MULTILINE,
+    )
+    if not m:
         return "None"
-    return "; ".join(issues[:5])
+
+    issues = []
+    for line in m.group(1).split("\n"):
+        s = re.sub(r"^[\-\*•]+\s*", "", line.strip()).strip()
+        s = re.sub(r"\*+", "", s).strip()
+        upper = s.upper()
+        if "NOT EXPLAINED" in upper or "NOT ADDRESSED" in upper:
+            if s:
+                issues.append(_ascii_safe(s))
+
+    return "; ".join(issues) if issues else "None"
+
+
+def _extract_rewritten_narrative(text: str) -> str:
+    """Extract the Suggested Improvements section as the rewritten narrative."""
+    m = re.search(
+        r"\*\*Suggested Improvements[:\*]*\s*\n(.+?)(?=\n---|\Z)",
+        text, re.IGNORECASE | re.DOTALL,
+    )
+    if not m:
+        return ""
+    return _ascii_safe(re.sub(r"\*+", "", m.group(1)).strip())
 
 
 def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
@@ -335,22 +343,27 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
         status = r.get("status", "error")
         score  = None  # reset each iteration so skipped/error rows show "-"
 
+        narrative     = _ascii_safe(r.get("narrative_text", ""))
+
         if status == "skipped":
             verdict = "SKIPPED"
             skipped += 1
             layer1_issues = "No narrative text in file"
             layer2_issues = "N/A"
+            rewritten     = ""
         elif status == "error":
             verdict = "ERROR"
             errors += 1
             layer1_issues = r.get("validation_result", "Validation error")
             layer2_issues = "N/A"
+            rewritten     = ""
         else:
             raw_text = r.get("validation_result", "")
             verdict  = _verdict_from_text(raw_text)
             score    = _score_from_text(raw_text)
             layer1_issues = _ascii_safe(_issues_from_text(raw_text))
             layer2_issues = _ascii_safe(_layer2_issues_from_text(raw_text))
+            rewritten     = _extract_rewritten_narrative(raw_text)
             if verdict == "PASS":
                 passed += 1
             elif verdict == "FAIL":
@@ -359,12 +372,14 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 warned += 1
 
         csv_rows.append({
-            "Project Name":      _ascii_safe(r.get("project_name", "")),
-            "Period":            period,
-            "Verdict":           verdict,
-            "Compliance Score":  score if score is not None else "-",
-            "Layer 1 Issues":    layer1_issues,
-            "Layer 2 Issues":    layer2_issues,
+            "Project Name":           _ascii_safe(r.get("project_name", "")),
+            "Period":                 period,
+            "Verdict":                verdict,
+            "Compliance Score":       score if score is not None else "-",
+            "Narrative Text":         narrative,
+            "Layer 1 Issues":         layer1_issues,
+            "Layer 2 Issues":         layer2_issues,
+            "AI Rewritten Narrative": rewritten,
         })
 
     overall_status = "PASS" if (failed == 0 and errors == 0) else "FAIL"
@@ -374,7 +389,8 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
     # csv_content directly as the email attachment / body instead of running
     # "Create CSV table" (which doesn't reliably quote comma-containing fields).
     _FIELDS = ["Project Name", "Period", "Verdict", "Compliance Score",
-               "Layer 1 Issues", "Layer 2 Issues"]
+               "Narrative Text", "Layer 1 Issues", "Layer 2 Issues",
+               "AI Rewritten Narrative"]
     buf = io.StringIO()
     writer = csv.DictWriter(buf, fieldnames=_FIELDS, lineterminator="\r\n")
     writer.writeheader()
