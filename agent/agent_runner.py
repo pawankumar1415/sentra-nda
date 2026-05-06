@@ -44,7 +44,7 @@ from typing import Callable, List, Optional, Tuple
 
 import re as _re
 
-from openai import AzureOpenAI
+from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.storage.blob import BlobServiceClient
 
@@ -84,16 +84,21 @@ def _get_credential():
     return DefaultAzureCredential()
 
 
-def _get_openai_client() -> AzureOpenAI:
+def _get_openai_client():
     """
-    Build AzureOpenAI pointing at the bare AI Services endpoint (not the
-    project-scoped /api/projects/... path).
+    Build an AzureOpenAI client pointing at the bare AI Services endpoint
+    (not the project-scoped /api/projects/... path).
 
-    The project-scoped endpoint requires a Foundry project-level role on top
-    of 'Cognitive Services OpenAI User', which the managed identity doesn't
-    have.  The bare endpoint only needs 'Cognitive Services OpenAI User',
-    which is already assigned on movar-secure-azure-resource.
+    The project-scoped endpoint (project.get_openai_client()) requires a
+    Foundry project-level role on top of 'Cognitive Services OpenAI User'.
+    The bare endpoint only needs 'Cognitive Services OpenAI User', which is
+    already assigned on movar-secure-azure-resource.
+
+    Import of AzureOpenAI is deferred to call time so a missing wheel on the
+    Azure worker cannot crash the entire function app at startup.
     """
+    from openai import AzureOpenAI  # deferred — keeps startup safe
+
     credential = _get_credential()
     m = _re.match(r"(https://[^/]+)", PROJECT_ENDPOINT)
     base_endpoint = m.group(1) if m else PROJECT_ENDPOINT
