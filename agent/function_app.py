@@ -22,30 +22,49 @@ from ingest_helper import ensure_index_exists, run_ingest, upload_eac_file, sear
 from agent_runner import validate_narrative
 from batch_validate import run_agent_batch_validate, run_pa_batch_validate
 from chat import run_chat
-from pgvector_backend import (
-    batch_validate_pgvector,
-    chat_pgvector,
-    ensure_pgvector_schema,
-    ingest_eac_pgvector,
-    ingest_mppr_pgvector,
-    list_projects_from_bytes as list_projects_pgvector_from_bytes,
-    search_projects_pgvector,
-    validate_narrative_pgvector,
-)
 
 logger = logging.getLogger(__name__)
+
+# pgvector_backend imports psycopg2 at module level, which can fail on some Azure
+# worker images after a fresh package reinstall. Wrapping it here means a psycopg2
+# crash only breaks pgvector/* routes — all other routes stay up.
+_PGVECTOR_ERROR: str = ""
+try:
+    from pgvector_backend import (
+        batch_validate_pgvector,
+        chat_pgvector,
+        ensure_pgvector_schema,
+        ingest_eac_pgvector,
+        ingest_mppr_pgvector,
+        list_projects_from_bytes as list_projects_pgvector_from_bytes,
+        search_projects_pgvector,
+        validate_narrative_pgvector,
+    )
+    try:
+        ensure_pgvector_schema()
+    except Exception as _exc:
+        logger.warning("Could not auto-create PGVector schema on startup: %s", _exc)
+except Exception as _pg_exc:
+    _PGVECTOR_ERROR = str(_pg_exc)
+    logger.error("pgvector_backend failed to load — pgvector/* routes will return 503: %s", _pg_exc)
+
+    def _pgvector_unavailable(*_a, **_kw):
+        raise RuntimeError(f"PGVector backend unavailable: {_PGVECTOR_ERROR}")
+
+    batch_validate_pgvector           = _pgvector_unavailable
+    chat_pgvector                     = _pgvector_unavailable
+    ensure_pgvector_schema            = _pgvector_unavailable
+    ingest_eac_pgvector               = _pgvector_unavailable
+    ingest_mppr_pgvector              = _pgvector_unavailable
+    list_projects_pgvector_from_bytes = _pgvector_unavailable
+    search_projects_pgvector          = _pgvector_unavailable
+    validate_narrative_pgvector       = _pgvector_unavailable
 
 # Ensure the AI Search index exists on cold start (no-op if it already exists)
 try:
     ensure_index_exists()
 except Exception as _exc:
     logger.warning("Could not auto-create AI Search index on startup: %s", _exc)
-
-# Ensure PGVector schema exists on cold start (no-op if already exists)
-try:
-    ensure_pgvector_schema()
-except Exception as _exc:
-    logger.warning("Could not auto-create PGVector schema on startup: %s", _exc)
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)

@@ -42,11 +42,11 @@ import uuid
 import inspect
 from typing import Callable, List, Optional, Tuple
 
-from azure.ai.projects import AIProjectClient
+import re as _re
+
+from openai import AzureOpenAI
 from azure.identity import DefaultAzureCredential, ClientSecretCredential
 from azure.storage.blob import BlobServiceClient
-
-import azure.ai.projects.models as models
 
 from config import (
     PROJECT_ENDPOINT,
@@ -74,46 +74,45 @@ CONVERSATION_BLOB_PREFIX = "conversations/"
 # Client Setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _get_project_client() -> AIProjectClient:
-    """
-    Build an AIProjectClient using either a Service Principal (when all three
-    AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET env vars are set)
-    or DefaultAzureCredential (az login locally, Managed Identity on Azure).
-    """
+def _get_credential():
+    """Return SP credential if env vars are set, else DefaultAzureCredential."""
     tenant_id     = os.environ.get("AZURE_TENANT_ID", "")
     client_id     = os.environ.get("AZURE_CLIENT_ID", "")
     client_secret = os.environ.get("AZURE_CLIENT_SECRET", "")
-
     if tenant_id and client_id and client_secret:
-        credential = ClientSecretCredential(
-            tenant_id=tenant_id,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
-    else:
-        credential = DefaultAzureCredential()
+        return ClientSecretCredential(tenant_id, client_id, client_secret)
+    return DefaultAzureCredential()
 
-    return AIProjectClient(
-        endpoint=PROJECT_ENDPOINT,
-        credential=credential,
+
+def _get_openai_client() -> AzureOpenAI:
+    """
+    Build AzureOpenAI pointing at the bare AI Services endpoint (not the
+    project-scoped /api/projects/... path).
+
+    The project-scoped endpoint requires a Foundry project-level role on top
+    of 'Cognitive Services OpenAI User', which the managed identity doesn't
+    have.  The bare endpoint only needs 'Cognitive Services OpenAI User',
+    which is already assigned on movar-secure-azure-resource.
+    """
+    credential = _get_credential()
+    m = _re.match(r"(https://[^/]+)", PROJECT_ENDPOINT)
+    base_endpoint = m.group(1) if m else PROJECT_ENDPOINT
+
+    def _token() -> str:
+        return credential.get_token("https://cognitiveservices.azure.com/.default").token
+
+    return AzureOpenAI(
+        azure_endpoint=base_endpoint,
+        azure_ad_token_provider=_token,
+        api_version="2025-03-01-preview",
     )
 
 
 def _get_blob_service_client() -> BlobServiceClient:
     """Build a BlobServiceClient using the same credential chain as the AI client."""
-    credential = DefaultAzureCredential()
-    tenant_id     = os.environ.get("AZURE_TENANT_ID", "")
-    client_id     = os.environ.get("AZURE_CLIENT_ID", "")
-    client_secret = os.environ.get("AZURE_CLIENT_SECRET", "")
-    if tenant_id and client_id and client_secret:
-        credential = ClientSecretCredential(
-            tenant_id=tenant_id,
-            client_id=client_id,
-            client_secret=client_secret,
-        )
     return BlobServiceClient(
         account_url=AZURE_STORAGE_ACCOUNT_URL,
-        credential=credential,
+        credential=_get_credential(),
     )
 
 
@@ -315,8 +314,7 @@ def validate_narrative(
             "is_new_conversation" — True if a new session was created
             "validation_result" — the agent's validation text / JSON
     """
-    client        = _get_project_client()
-    openai_client = client.get_openai_client()
+    openai_client = _get_openai_client()
 
     # Build the structured user prompt for this turn
     user_prompt = (
