@@ -26,6 +26,7 @@ can handle both backends with minimal branching:
 
 from __future__ import annotations
 
+import csv
 import io
 import logging
 import re
@@ -188,6 +189,22 @@ def run_agent_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
 # Called by POST /api/pa-batch-validate (separate route, existing route untouched)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _ascii_safe(text: str) -> str:
+    """Replace common Unicode punctuation with ASCII equivalents so CSV cells
+    don't get mojibake'd when Power Automate reads them as Latin-1."""
+    return (
+        text
+        .replace("…", "...")   # ellipsis
+        .replace("—", "-")     # em dash
+        .replace("–", "-")     # en dash
+        .replace("‘", "'")     # left single quote
+        .replace("’", "'")     # right single quote
+        .replace("“", '"')     # left double quote
+        .replace("”", '"')     # right double quote
+        .replace("£", "GBP ")  # pound sign
+    )
+
+
 def _score_from_text(text: str) -> Optional[int]:
     """Extract compliance score from 'Compliance Score: N/10' pattern."""
     m = re.search(r"compliance score[:\s*]+(\d+)\s*/\s*10", text, re.IGNORECASE)
@@ -260,6 +277,40 @@ def _issues_from_text(text: str, max_issues: int = 5) -> str:
     return "; ".join(issues)
 
 
+def _layer2_issues_from_text(text: str) -> str:
+    """
+    Extract Layer 2 data issues (EAC/schedule) from agent prose.
+    Looks for lines inside the Layer 2 section that start with ❌ or ⚠️.
+    Returns "None" if no data issues found (i.e. data checks passed).
+    """
+    # Find the Layer 2 section — everything after a Layer 2 heading
+    m = re.search(r"layer\s*2[^\n]*\n(.+)", text, re.IGNORECASE | re.DOTALL)
+    section = m.group(1) if m else text
+
+    fail_lines: List[str] = []
+    warn_lines: List[str] = []
+
+    for line in section.split("\n"):
+        s = re.sub(r"^[\-\*•]+\s*", "", line.strip()).strip()
+        if not s:
+            continue
+        if s.startswith("❌"):
+            clean = re.sub(r"^❌\s*", "", s)
+            clean = re.sub(r"\*+", "", clean).strip()
+            if clean:
+                fail_lines.append(clean)
+        elif s.startswith("⚠️"):
+            clean = re.sub(r"^⚠️\s*", "", s)
+            clean = re.sub(r"\*+", "", clean).strip()
+            if clean:
+                warn_lines.append(clean)
+
+    issues = fail_lines if fail_lines else warn_lines
+    if not issues:
+        return "None"
+    return "; ".join(issues[:5])
+
+
 def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
     """
     Power Automate variant of batch validation.
@@ -298,8 +349,8 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
             raw_text = r.get("validation_result", "")
             verdict  = _verdict_from_text(raw_text)
             score    = _score_from_text(raw_text)
-            layer1_issues = _issues_from_text(raw_text)
-            layer2_issues = "None"
+            layer1_issues = _ascii_safe(_issues_from_text(raw_text))
+            layer2_issues = _ascii_safe(_layer2_issues_from_text(raw_text))
             if verdict == "PASS":
                 passed += 1
             elif verdict == "FAIL":
@@ -308,7 +359,7 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
                 warned += 1
 
         csv_rows.append({
-            "Project Name":      r.get("project_name", ""),
+            "Project Name":      _ascii_safe(r.get("project_name", "")),
             "Period":            period,
             "Verdict":           verdict,
             "Compliance Score":  score if score is not None else "-",
@@ -317,6 +368,18 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
         })
 
     overall_status = "PASS" if (failed == 0 and errors == 0) else "FAIL"
+
+    # Pre-build the CSV using Python's csv module so all fields are correctly
+    # quoted regardless of commas in the text. Power Automate can use
+    # csv_content directly as the email attachment / body instead of running
+    # "Create CSV table" (which doesn't reliably quote comma-containing fields).
+    _FIELDS = ["Project Name", "Period", "Verdict", "Compliance Score",
+               "Layer 1 Issues", "Layer 2 Issues"]
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_FIELDS, lineterminator="\r\n")
+    writer.writeheader()
+    writer.writerows(csv_rows)
+    csv_content = buf.getvalue()
 
     return {
         "period":         period,
@@ -328,4 +391,5 @@ def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
         "errors":         errors,
         "overall_status": overall_status,
         "csv_rows":       csv_rows,
+        "csv_content":    csv_content,
     }
