@@ -84,6 +84,11 @@ def _get_credential():
     return DefaultAzureCredential()
 
 
+def _get_project_client() -> AIProjectClient:
+    """Build an AIProjectClient (used by chat.py for its OpenAI client)."""
+    return AIProjectClient(endpoint=PROJECT_ENDPOINT, credential=_get_credential())
+
+
 def _get_openai_client():
     """
     Build an AzureOpenAI client pointing at the bare AI Services endpoint
