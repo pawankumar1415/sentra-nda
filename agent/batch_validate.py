@@ -311,12 +311,15 @@ def _layer2_issues_from_text(text: str) -> str:
 def _extract_rewritten_narrative(text: str) -> str:
     """Extract the Suggested Improvements section as the rewritten narrative."""
     m = re.search(
-        r"\*\*Suggested Improvements[:\*]*\s*\n(.+?)(?=\n---|\Z)",
+        r"\*\*Suggested Improvements[^\n]*\n(.+?)(?=\n---|\Z)",
         text, re.IGNORECASE | re.DOTALL,
     )
     if not m:
         return ""
-    return _ascii_safe(re.sub(r"\*+", "", m.group(1)).strip())
+    content = re.sub(r"\*+", "", m.group(1)).strip()
+    # Collapse embedded newlines to spaces so CSV cell stays single-line
+    content = re.sub(r"\s*\n\s*", " ", content)
+    return _ascii_safe(content)
 
 
 def run_pa_batch_validate(file_bytes: bytes, filename: str = "") -> Dict:
