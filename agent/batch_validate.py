@@ -244,16 +244,14 @@ def _verdict_from_text(text: str) -> str:
 
 def _issues_from_text(text: str, max_issues: int = 5) -> str:
     """
-    Extract only the hard-fail (❌) lines from agent prose.
-    Falls back to ⚠️ lines if no ❌ found.
-    Strips markdown bullet prefixes (- * •), bold markers, and caps at max_issues.
-    The agent formats issues as '- ❌ ...' so we must strip the bullet first.
+    Extract Layer 1 issues from agent prose.
+    Primary: ❌ lines; secondary: ⚠️ lines.
+    Fallback: all non-passing lines from the Layer 1 section when no emoji markers found.
     """
     fail_lines: List[str] = []
     warn_lines: List[str] = []
 
     for line in text.split("\n"):
-        # Strip whitespace then any leading bullet/list markers
         s = re.sub(r"^[\-\*•]+\s*", "", line.strip()).strip()
         if not s:
             continue
@@ -269,6 +267,20 @@ def _issues_from_text(text: str, max_issues: int = 5) -> str:
                 warn_lines.append(clean)
 
     issues = fail_lines if fail_lines else warn_lines
+
+    if not issues:
+        # Fallback: extract all non-passing lines from the Layer 1 section
+        m = re.search(
+            r"\*\*Layer 1[^\n]*\n(.+?)(?=\*\*Layer 2|\*\*Suggested|\*\*Overall|^---|\Z)",
+            text, re.IGNORECASE | re.DOTALL | re.MULTILINE,
+        )
+        if m:
+            for line in m.group(1).split("\n"):
+                s = re.sub(r"^[\-\*•\d\.]+\s*", "", line.strip())
+                s = re.sub(r"\*+", "", s).strip()
+                if s and not s.startswith("✅") and "compliance score" not in s.lower():
+                    issues.append(s)
+
     if not issues:
         return "None"
 
