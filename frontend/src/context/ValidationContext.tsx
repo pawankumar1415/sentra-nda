@@ -62,10 +62,13 @@ const DEFAULT_VALIDATE: ValidateFormState = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function loadFromStorage<T>(key: string, fallback: T): T {
+function loadFromStorage<T extends object>(key: string, fallback: T): T {
     try {
         const raw = localStorage.getItem(key);
-        return raw ? (JSON.parse(raw) as T) : fallback;
+        if (!raw) return fallback;
+        // Merge with fallback so any fields added after the data was saved
+        // always receive a safe default value instead of undefined.
+        return { ...fallback, ...(JSON.parse(raw) as T) };
     } catch {
         return fallback;
     }
