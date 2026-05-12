@@ -21,11 +21,18 @@ export interface BatchState {
     progress: { current: number; total: number; statusText: string };
 }
 
+export interface ProjectEntry {
+    project_name: string;
+    narrative_text: string;
+}
+
 export interface ValidateFormState {
     result: any | null;
     projectName: string;
     period: string;
     narrative: string;
+    projectsList: ProjectEntry[];
+    isManualEntry: boolean;
 }
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -45,10 +52,12 @@ const DEFAULT_BATCH: BatchState = {
 };
 
 const DEFAULT_VALIDATE: ValidateFormState = {
-    result:      null,
-    projectName: 'Sellafield',
-    period:      'P08',
-    narrative:   '',
+    result:       null,
+    projectName:  'Sellafield',
+    period:       'P08',
+    narrative:    '',
+    projectsList: [],
+    isManualEntry: true,
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

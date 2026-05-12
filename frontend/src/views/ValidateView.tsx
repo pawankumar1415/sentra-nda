@@ -7,20 +7,20 @@ import { diffWords } from 'diff';
 const ValidateView = () => {
     // ── Persisted state (survives page navigation) ────────────────────────────
     const { validateState, setValidateState, addToHistory } = useValidation();
-    const { result, projectName, period, narrative } = validateState;
+    const { result, projectName, period, narrative, projectsList, isManualEntry } = validateState;
 
-    const setResult      = (v: any)    => setValidateState(prev => ({ ...prev, result: v }));
-    const setProjectName = (v: string) => setValidateState(prev => ({ ...prev, projectName: v }));
-    const setPeriod      = (v: string) => setValidateState(prev => ({ ...prev, period: v }));
-    const setNarrative   = (v: string) => setValidateState(prev => ({ ...prev, narrative: v }));
+    const setResult       = (v: any)       => setValidateState(prev => ({ ...prev, result: v }));
+    const setProjectName  = (v: string)    => setValidateState(prev => ({ ...prev, projectName: v }));
+    const setPeriod       = (v: string)    => setValidateState(prev => ({ ...prev, period: v }));
+    const setNarrative    = (v: string)    => setValidateState(prev => ({ ...prev, narrative: v }));
+    const setProjectsList = (v: ProjectInfo[]) => setValidateState(prev => ({ ...prev, projectsList: v }));
+    const setIsManualEntry = (v: boolean)  => setValidateState(prev => ({ ...prev, isManualEntry: v }));
 
     // ── Local-only state ──────────────────────────────────────────────────────
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-    const [projectsList, setProjectsList] = useState<ProjectInfo[]>([]);
-    const [isManualEntry, setIsManualEntry] = useState(true);
     const [uploadLoading, setUploadLoading] = useState(false);
     const [toastMessage, setToastMessage] = useState('');
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -181,6 +181,7 @@ const ValidateView = () => {
 
         setLoading(true);
         setError('');
+        setResult(null); // clear previous result immediately so the panel doesn't show stale data
 
         try {
             const response = await validateNarrative({ narrative, project_name: projectName, period });
@@ -307,13 +308,17 @@ const ValidateView = () => {
                                                 <span style={{ color: 'var(--accent-blue)', fontWeight: 'bold', fontSize: '0.9rem' }}>
                                                     {uploadedFile.name} ({projectsList.length} loaded)
                                                 </span>
+                                            ) : projectsList.length > 0 ? (
+                                                <span style={{ color: 'var(--accent-blue)', fontSize: '0.9rem' }}>
+                                                    {projectsList.length} projects loaded — click to replace file
+                                                </span>
                                             ) : (
                                                 <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                                                     Click to upload MPPR Excel (auto-fill)
                                                 </span>
                                             )}
                                         </div>
-                                        {uploadedFile && <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />}
+                                        {(uploadedFile || projectsList.length > 0) && <ShieldCheck size={20} style={{ color: 'var(--status-pass)' }} />}
                                     </div>
                                 )}
 
