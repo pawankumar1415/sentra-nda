@@ -70,9 +70,12 @@ RAG Function App    Agent Function App
 │   └── local.settings.json         # Dev credentials (gitignored)
 │
 ├── frontend/                       # React + TypeScript UI (Custom approach)
+│   ├── public/
+│   │   └── staticwebapp.config.json  # SPA routing fallback for Azure Static Web Apps
 │   └── src/
 │       ├── context/
-│       │   └── AuthContext.tsx     # JWT state (token/username/is_admin) in localStorage
+│       │   ├── AuthContext.tsx     # JWT state (token/username/is_admin) in localStorage
+│       │   └── ValidationContext.tsx # Persisted batch/validate state + history log (localStorage)
 │       ├── components/
 │       │   ├── Sidebar.tsx         # Nav + logged-in user + logout + admin link
 │       │   └── ProtectedRoute.tsx  # Redirects to /login if unauthenticated
@@ -81,8 +84,9 @@ RAG Function App    Agent Function App
 │       │   ├── AdminView.tsx       # User management table (admin only)
 │       │   ├── ChatView.tsx        # Conversational RAG assistant
 │       │   ├── ValidateView.tsx    # Single narrative validation + project search
-│       │   ├── BatchValidateView.tsx # Batch validation (RAG or Agent mode)
-│       │   └── IngestView.tsx      # Data upload (MPPR + EAC)
+│       │   ├── BatchValidateView.tsx # Batch validation with persistent progress state
+│       │   ├── IngestView.tsx      # Data upload (MPPR + EAC)
+│       │   └── AnalyticsView.tsx   # Validation history log (per-user, stored in localStorage)
 │       └── services/
 │           └── api.ts              # All API calls with JWT auth header
 │
@@ -204,6 +208,13 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 - Upload MPPR Excel to index into PGVector (data scoped to your account)
 - Upload EAC variance Excel to update your financial reference data
 
+### Analytics (`/analytics`)
+- Persistent history log of every validation run (individual and batch), stored in browser localStorage
+- Summary cards: Total Scored, Pass, Warnings, Fail, Individual count, Batch count
+- Pass rate bar showing Pass / Warn / Fail proportions
+- Filterable and sortable scores table with verdict badges, scores, and timestamps
+- History survives page navigation and browser refresh; scoped per analyst per browser
+
 ### Admin Panel (`/admin` — admin only)
 - User management table: all registered users with project and session counts
 - Toggle active/inactive status per user
@@ -264,10 +275,46 @@ cd agent
 func azure functionapp publish nda-foundry-api --python
 ```
 
-**Frontend:** Build and deploy to Azure Static Web Apps or your preferred host.
+**Frontend — Azure Static Web Apps**
+
+Hosted at: `https://lemon-bay-04878fd03.4.azurestaticapps.net`
+Resource: `nda-custom-frontend-static` (Resource Group: `sellafield-dpmo-dev`, Region: West Europe)
+
+Prerequisites (one-time):
 ```bash
-cd frontend && npm run build
+npm install -g @azure/static-web-apps-cli
 ```
+
+Step 1 — Confirm `frontend/.env.production` contains real values (Vite bakes these into the bundle at build time):
+```
+VITE_AZURE_FUNCTION_KEY=<rag-function-host-key>
+VITE_AZURE_AGENT_FUNCTION_KEY=<agent-function-host-key>
+VITE_API_BASE_URL=https://nda-python-backend.azurewebsites.net/api
+```
+
+Step 2 — Build:
+```bash
+cd frontend
+npm run build
+# Output: frontend/dist/
+```
+
+Step 3 — Get the deployment token (only needed once; token does not expire):
+```bash
+az staticwebapp secrets list \
+  --name nda-custom-frontend-static \
+  --resource-group sellafield-dpmo-dev \
+  --query "properties.apiKey" -o tsv
+```
+
+Step 4 — Deploy (run from inside `frontend/`):
+```bash
+swa deploy dist --deployment-token <TOKEN> --env production
+```
+
+For any future frontend change, only Steps 2 and 4 are needed. The Python function apps do not need redeploying for frontend-only changes.
+
+> **Note:** `frontend/public/staticwebapp.config.json` handles SPA client-side routing so all routes (`/validate`, `/analytics`, etc.) work when navigated to directly. This file is automatically copied into `dist/` by Vite at build time.
 
 ---
 
