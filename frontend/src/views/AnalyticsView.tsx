@@ -4,12 +4,18 @@ import { useValidation, type HistoryEntry } from '../context/ValidationContext';
 
 const PAGE_SIZE = 25;
 
+const TRUNCATE = 100; // chars shown in table cell before truncation
+
+const truncate = (text: string | undefined, len = TRUNCATE) =>
+    !text ? '—' : text.length <= len ? text : text.slice(0, len) + '…';
+
 const AnalyticsView = () => {
     const { history, clearHistory } = useValidation();
     const [confirmClear, setConfirmClear] = useState(false);
     const [page, setPage] = useState(1);
     const [filterVerdict, setFilterVerdict] = useState<'ALL' | 'PASS' | 'WARN' | 'FAIL' | 'ERROR'>('ALL');
     const [sortDesc, setSortDesc] = useState(true);
+    const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
     // ── Derived stats ─────────────────────────────────────────────────────────
 
@@ -228,66 +234,110 @@ const AnalyticsView = () => {
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead>
                                     <tr style={{ background: 'var(--bg-secondary)', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-secondary)' }}>
-                                        <th style={{ padding: '10px 20px', textAlign: 'left', fontWeight: 600 }}>ID</th>
-                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600 }}>Document</th>
-                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600 }}>Type</th>
-                                        <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600 }}>Verdict</th>
-                                        <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600 }}>Score</th>
-                                        <th style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 600 }}>Date / Time</th>
+                                        <th style={{ padding: '10px 20px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>ID</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Document</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>Type</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Verdict</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, whiteSpace: 'nowrap' }}>Score</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600 }}>Narrative</th>
+                                        <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600 }}>Rewritten</th>
+                                        <th style={{ padding: '10px 20px', textAlign: 'right', fontWeight: 600, whiteSpace: 'nowrap' }}>Date / Time</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {pageRows.map((entry: HistoryEntry) => (
-                                        <tr
-                                            key={entry.id}
-                                            style={{ borderBottom: '1px solid var(--border-color)', fontSize: '0.88rem' }}
-                                            className="hover-row"
-                                        >
-                                            {/* ID: period | project_name */}
-                                            <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                {entry.period} | {entry.project_name}
-                                            </td>
-                                            {/* Document */}
-                                            <td style={{ padding: '12px 16px', fontWeight: 500, maxWidth: '280px' }}>
-                                                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                    {entry.period} | {entry.project_name}
-                                                </span>
-                                            </td>
-                                            {/* Type badge */}
-                                            <td style={{ padding: '12px 16px' }}>
-                                                <span style={{
-                                                    fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px',
-                                                    borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px',
-                                                    background: entry.type === 'batch' ? 'rgba(99,102,241,0.12)' : 'rgba(14,165,233,0.12)',
-                                                    color: entry.type === 'batch' ? '#818cf8' : '#38bdf8',
-                                                }}>
-                                                    {entry.type === 'batch' ? 'Batch' : 'Individual'}
-                                                </span>
-                                            </td>
-                                            {/* Verdict */}
-                                            <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                                <span style={{
-                                                    display: 'inline-flex', alignItems: 'center', gap: '5px',
-                                                    padding: '3px 10px', borderRadius: '4px', fontWeight: 700,
-                                                    fontSize: '0.82rem',
-                                                    background: verdictBg(entry.verdict),
-                                                    color: verdictColor(entry.verdict),
-                                                }}>
-                                                    {verdictIcon(entry.verdict)}
-                                                    {entry.verdict}
-                                                </span>
-                                            </td>
-                                            {/* Score */}
-                                            <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '1rem', color: entry.score !== null ? verdictColor(entry.verdict) : 'var(--text-secondary)' }}>
-                                                {entry.score !== null ? `${entry.score}` : '—'}
-                                            </td>
-                                            {/* Date */}
-                                            <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                <span style={{ display: 'block', fontSize: '0.85rem' }}>{formatDate(entry.timestamp)}</span>
-                                                <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>{formatTime(entry.timestamp)}</span>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                    {pageRows.map((entry: HistoryEntry) => {
+                                        const isExpanded = expandedRow === entry.id;
+                                        return (
+                                            <>
+                                                <tr
+                                                    key={entry.id}
+                                                    style={{ borderBottom: isExpanded ? 'none' : '1px solid var(--border-color)', fontSize: '0.88rem', cursor: 'pointer' }}
+                                                    className="hover-row"
+                                                    onClick={() => setExpandedRow(isExpanded ? null : entry.id)}
+                                                >
+                                                    {/* ID: period | project_name */}
+                                                    <td style={{ padding: '12px 20px', fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                        {entry.period} | {entry.project_name}
+                                                    </td>
+                                                    {/* Document */}
+                                                    <td style={{ padding: '12px 16px', fontWeight: 500, maxWidth: '200px' }}>
+                                                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {entry.period} | {entry.project_name}
+                                                        </span>
+                                                    </td>
+                                                    {/* Type badge */}
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span style={{
+                                                            fontSize: '0.72rem', fontWeight: 600, padding: '2px 8px',
+                                                            borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '0.5px',
+                                                            background: entry.type === 'batch' ? 'rgba(99,102,241,0.12)' : 'rgba(14,165,233,0.12)',
+                                                            color: entry.type === 'batch' ? '#818cf8' : '#38bdf8',
+                                                        }}>
+                                                            {entry.type === 'batch' ? 'Batch' : 'Individual'}
+                                                        </span>
+                                                    </td>
+                                                    {/* Verdict */}
+                                                    <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                                                        <span style={{
+                                                            display: 'inline-flex', alignItems: 'center', gap: '5px',
+                                                            padding: '3px 10px', borderRadius: '4px', fontWeight: 700,
+                                                            fontSize: '0.82rem',
+                                                            background: verdictBg(entry.verdict),
+                                                            color: verdictColor(entry.verdict),
+                                                        }}>
+                                                            {verdictIcon(entry.verdict)}
+                                                            {entry.verdict}
+                                                        </span>
+                                                    </td>
+                                                    {/* Score */}
+                                                    <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, fontSize: '1rem', color: entry.score !== null ? verdictColor(entry.verdict) : 'var(--text-secondary)' }}>
+                                                        {entry.score !== null ? `${entry.score}` : '—'}
+                                                    </td>
+                                                    {/* Narrative preview */}
+                                                    <td style={{ padding: '12px 16px', maxWidth: '220px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.narrative}>
+                                                            {truncate(entry.narrative)}
+                                                        </span>
+                                                    </td>
+                                                    {/* Rewritten preview */}
+                                                    <td style={{ padding: '12px 16px', maxWidth: '220px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={entry.rewritten_narrative}>
+                                                            {truncate(entry.rewritten_narrative)}
+                                                        </span>
+                                                    </td>
+                                                    {/* Date */}
+                                                    <td style={{ padding: '12px 20px', textAlign: 'right', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ display: 'block', fontSize: '0.85rem' }}>{formatDate(entry.timestamp)}</span>
+                                                        <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>{formatTime(entry.timestamp)}</span>
+                                                    </td>
+                                                </tr>
+                                                {isExpanded && (
+                                                    <tr key={`${entry.id}-expanded`} style={{ borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                                                        <td colSpan={8} style={{ padding: '16px 24px' }}>
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                                                                <div>
+                                                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                                                        Narrative
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                                                                        {entry.narrative || <span style={{ opacity: 0.5 }}>No narrative recorded</span>}
+                                                                    </div>
+                                                                </div>
+                                                                <div>
+                                                                    <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                                                        Rewritten Narrative
+                                                                    </div>
+                                                                    <div style={{ fontSize: '0.85rem', lineHeight: 1.6, color: 'var(--text-primary)', whiteSpace: 'pre-wrap' }}>
+                                                                        {entry.rewritten_narrative || <span style={{ opacity: 0.5 }}>No rewrite available</span>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

@@ -133,7 +133,7 @@ const BatchValidateView = () => {
                         project_name: proj.project_name,
                         period:       resolvedPeriod,
                     });
-                    currentResults.push({ ...validationResult, project_name: proj.project_name });
+                    currentResults.push({ ...validationResult, project_name: proj.project_name, _narrative: proj.narrative_text });
                 } catch (err: any) {
                     currentResults.push({
                         project_name:    proj.project_name,
@@ -153,12 +153,14 @@ const BatchValidateView = () => {
             // Record every project as its own history entry
             addToHistory(
                 currentResults.map(res => ({
-                    type:         'batch' as const,
-                    project_name: res.project_name,
-                    period:       resolvedPeriod,
-                    verdict:      (res.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
-                    score:        res.layer1?.compliance_score ?? null,
-                    batch_id:     batchId,
+                    type:                 'batch' as const,
+                    project_name:         res.project_name,
+                    period:               resolvedPeriod,
+                    verdict:              (res.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
+                    score:                res.layer1?.compliance_score ?? null,
+                    batch_id:             batchId,
+                    narrative:            res._narrative ?? undefined,
+                    rewritten_narrative:  res.rewritten_narrative ?? undefined,
                 }))
             );
 

@@ -11,7 +11,9 @@ export interface HistoryEntry {
     verdict: 'PASS' | 'WARN' | 'FAIL' | 'ERROR';
     score: number | null;
     timestamp: string; // ISO 8601
-    batch_id?: string; // links all projects from the same batch run
+    batch_id?: string;       // links all projects from the same batch run
+    narrative?: string;      // original narrative submitted for validation
+    rewritten_narrative?: string; // AI-generated rewrite
 }
 
 export interface BatchState {

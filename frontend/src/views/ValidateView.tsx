@@ -187,11 +187,13 @@ const ValidateView = () => {
             const response = await validateNarrative({ narrative, project_name: projectName, period });
             setResult(response);
             addToHistory([{
-                type:         'individual',
-                project_name: projectName,
+                type:                 'individual',
+                project_name:         projectName,
                 period,
-                verdict:      (response.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
-                score:        response.layer1?.compliance_score ?? null,
+                verdict:              (response.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
+                score:                response.layer1?.compliance_score ?? null,
+                narrative:            narrative,
+                rewritten_narrative:  response.rewritten_narrative ?? undefined,
             }]);
         } catch (err: any) {
             setError(err.message || 'An error occurred during validation');
