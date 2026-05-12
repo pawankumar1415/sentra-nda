@@ -1,15 +1,21 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Info, Loader2, FileEdit, X, UploadCloud, Search, Share2 } from 'lucide-react';
 import { validateNarrative, listProjects, searchProjects, listSharePointFiles, listProjectsFromSharePoint, type ProjectInfo, type SearchedProject, type SharePointFile } from '../services/api';
+import { useValidation } from '../context/ValidationContext';
 import { diffWords } from 'diff';
 
 const ValidateView = () => {
-    const [projectName, setProjectName] = useState('Sellafield');
-    const [period, setPeriod] = useState('P08');
-    const [narrative, setNarrative] = useState('');
+    // ── Persisted state (survives page navigation) ────────────────────────────
+    const { validateState, setValidateState, addToHistory } = useValidation();
+    const { result, projectName, period, narrative } = validateState;
 
+    const setResult      = (v: any)    => setValidateState(prev => ({ ...prev, result: v }));
+    const setProjectName = (v: string) => setValidateState(prev => ({ ...prev, projectName: v }));
+    const setPeriod      = (v: string) => setValidateState(prev => ({ ...prev, period: v }));
+    const setNarrative   = (v: string) => setValidateState(prev => ({ ...prev, narrative: v }));
+
+    // ── Local-only state ──────────────────────────────────────────────────────
     const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState<any>(null);
     const [error, setError] = useState('');
 
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -166,7 +172,7 @@ const ValidateView = () => {
         }
     };
 
-    const handleValidate = async (e: React.FormEvent) => {
+    const handleValidate = async (e: React.SyntheticEvent) => {
         e.preventDefault();
         if (!narrative.trim()) {
             setError('Please provide a narrative to validate.');
@@ -179,6 +185,13 @@ const ValidateView = () => {
         try {
             const response = await validateNarrative({ narrative, project_name: projectName, period });
             setResult(response);
+            addToHistory([{
+                type:         'individual',
+                project_name: projectName,
+                period,
+                verdict:      (response.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
+                score:        response.layer1?.compliance_score ?? null,
+            }]);
         } catch (err: any) {
             setError(err.message || 'An error occurred during validation');
         } finally {

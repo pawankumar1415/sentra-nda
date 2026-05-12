@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { MessageSquare, FileText, Settings, ListChecks, Shield, LogOut } from 'lucide-react';
+import { MessageSquare, FileText, Settings, ListChecks, Shield, LogOut, BarChart2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Sidebar = () => {
@@ -48,6 +48,14 @@ const Sidebar = () => {
                 >
                     <Settings size={18} />
                     <span>Data Upload</span>
+                </NavLink>
+
+                <NavLink
+                    to="/analytics"
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                >
+                    <BarChart2 size={18} />
+                    <span>Analytics</span>
                 </NavLink>
 
                 {user?.is_admin && (

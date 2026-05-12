@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
-import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X, Download, Share2 } from 'lucide-react';
+import { ShieldCheck, AlertTriangle, XCircle, CheckCircle2, Loader2, UploadCloud, ChevronDown, ChevronRight, Info, X, Download, Share2, RotateCcw } from 'lucide-react';
 import { listProjects, validateNarrative, listSharePointFiles, listProjectsFromSharePoint, type SharePointFile } from '../services/api';
+import { useValidation, generateId } from '../context/ValidationContext';
 import * as XLSX from 'xlsx';
 
 const BatchValidateView = () => {
-    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+    // ── Persisted state (survives page navigation) ────────────────────────────
+    const { batchState, setBatchState, clearBatchState, addToHistory } = useValidation();
+    const { results, total, period, progress } = batchState;
+
+    // ── Local-only state (intentionally reset on navigation) ──────────────────
     const [loading, setLoading] = useState(false);
-    const [results, setResults] = useState<any[]>([]);
-    const [total, setTotal] = useState(0);
-    const [period, setPeriod] = useState('');
     const [error, setError] = useState('');
     const [expandedRow, setExpandedRow] = useState<string | null>(null);
-    const [progress, setProgress] = useState({ current: 0, total: 0, statusText: '' });
 
     // ── SharePoint source state ────────────────────────────────────────────
     const [source, setSource] = useState<'local' | 'sharepoint'>('local');
@@ -21,6 +22,7 @@ const BatchValidateView = () => {
     const [spProjects, setSpProjects] = useState<{ project_name: string; narrative_text: string }[] | null>(null);
     const [spProjectsLoading, setSpProjectsLoading] = useState(false);
     const [spPeriod, setSpPeriod] = useState('');
+    const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files || e.target.files.length === 0) return;
@@ -41,7 +43,6 @@ const BatchValidateView = () => {
         setUploadedFile(null);
         setSpFileId('');
         setSpProjects(null);
-        setResults([]);
 
         if (newSource === 'sharepoint' && spFiles.length === 0) {
             setSpFilesLoading(true);
@@ -86,9 +87,15 @@ const BatchValidateView = () => {
 
         setLoading(true);
         setError('');
-        setResults([]);
         setExpandedRow(null);
-        setProgress({ current: 0, total: 0, statusText: 'Extracting projects from Excel...' });
+        setBatchState({
+            results:  [],
+            total:    0,
+            period:   '',
+            progress: { current: 0, total: 0, statusText: 'Extracting projects from Excel...' },
+        });
+
+        const batchId = generateId();
 
         try {
             // Step 1: Get projects — from local upload or SharePoint
@@ -104,25 +111,21 @@ const BatchValidateView = () => {
                 resolvedPeriod = listData.period || '';
             }
 
-            // Keep period state in sync for the results header
-            setPeriod(resolvedPeriod);
-
             if (projects.length === 0) {
-                throw new Error("No projects found in the selected file.");
+                throw new Error('No projects found in the selected file.');
             }
 
-            setTotal(projects.length);
+            setBatchState(prev => ({ ...prev, total: projects.length, period: resolvedPeriod }));
 
             const currentResults: any[] = [];
 
-            // Step 2: Validate each project individually to show dynamic progress
+            // Step 2: Validate each project individually for live progress
             for (let i = 0; i < projects.length; i++) {
                 const proj = projects[i];
-                setProgress({
-                    current: i,
-                    total: projects.length,
-                    statusText: `Validating ${proj.project_name}...`
-                });
+                setBatchState(prev => ({
+                    ...prev,
+                    progress: { current: i, total: projects.length, statusText: `Validating ${proj.project_name}...` },
+                }));
 
                 try {
                     const validationResult = await validateNarrative({
@@ -139,11 +142,25 @@ const BatchValidateView = () => {
                     });
                 }
 
-                // Update results dynamically
-                setResults([...currentResults]);
+                setBatchState(prev => ({ ...prev, results: [...currentResults] }));
             }
 
-            setProgress({ current: projects.length, total: projects.length, statusText: 'Validation Complete!' });
+            setBatchState(prev => ({
+                ...prev,
+                progress: { current: projects.length, total: projects.length, statusText: 'Validation Complete!' },
+            }));
+
+            // Record every project as its own history entry
+            addToHistory(
+                currentResults.map(res => ({
+                    type:         'batch' as const,
+                    project_name: res.project_name,
+                    period:       resolvedPeriod,
+                    verdict:      (res.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
+                    score:        res.layer1?.compliance_score ?? null,
+                    batch_id:     batchId,
+                }))
+            );
 
         } catch (err: any) {
             setError(err.message || 'An error occurred during batch validation');
@@ -153,61 +170,57 @@ const BatchValidateView = () => {
     };
 
     const getVerdictColor = (verdict: string) => {
-        if (verdict === 'PASS') return 'var(--status-pass)';
-        if (verdict === 'FAIL') return 'var(--status-fail)';
-        if (verdict === 'ERROR') return 'var(--status-fail)';
+        if (verdict === 'PASS')    return 'var(--status-pass)';
+        if (verdict === 'FAIL')    return 'var(--status-fail)';
+        if (verdict === 'ERROR')   return 'var(--status-fail)';
         if (verdict === 'SKIPPED') return 'var(--text-secondary)';
         return 'var(--status-warn)';
     };
 
     const getVerdictIcon = (verdict: string) => {
-        if (verdict === 'PASS') return <CheckCircle2 size={18} />;
-        if (verdict === 'FAIL') return <XCircle size={18} />;
-        if (verdict === 'ERROR') return <XCircle size={18} />;
+        if (verdict === 'PASS')    return <CheckCircle2 size={18} />;
+        if (verdict === 'FAIL')    return <XCircle size={18} />;
+        if (verdict === 'ERROR')   return <XCircle size={18} />;
         if (verdict === 'SKIPPED') return <Info size={18} />;
         return <AlertTriangle size={18} />;
     };
 
     const getVerdictBg = (verdict: string) => {
-        if (verdict === 'PASS') return 'var(--status-pass-bg)';
-        if (verdict === 'FAIL') return 'var(--status-fail-bg)';
-        if (verdict === 'ERROR') return 'var(--status-fail-bg)';
+        if (verdict === 'PASS')    return 'var(--status-pass-bg)';
+        if (verdict === 'FAIL')    return 'var(--status-fail-bg)';
+        if (verdict === 'ERROR')   return 'var(--status-fail-bg)';
         if (verdict === 'SKIPPED') return 'var(--bg-secondary)';
         return 'var(--status-warn-bg)';
     };
 
     const toggleRow = (projectName: string) => {
-        if (expandedRow === projectName) {
-            setExpandedRow(null);
-        } else {
-            setExpandedRow(projectName);
-        }
+        setExpandedRow(prev => (prev === projectName ? null : projectName));
     };
 
     const handleExport = () => {
         if (!results.length) return;
 
-        // Flatten the deeply nested JSON into simple rows for Excel
         const exportData = results.map(res => ({
-            'Project Name': res.project_name || res._meta?.project_name,
-            'Period': res._meta?.period || period,
-            'Overall Verdict': res.overall_verdict,
-            'Compliance Score': res.layer1?.compliance_score || 0,
-            'EAC Variance (£m)': res._meta?.eac_variance_m || 0,
+            'Project Name':             res.project_name || res._meta?.project_name,
+            'Period':                   res._meta?.period || period,
+            'Overall Verdict':          res.overall_verdict,
+            'Compliance Score':         res.layer1?.compliance_score || 0,
+            'EAC Variance (£m)':        res._meta?.eac_variance_m || 0,
             'Schedule Variance (Days)': res._meta?.schedule_days || 0,
-            'Compliance Issues': res.layer1?.issues?.join('\n') || 'None',
-            'Data Inconsistencies': res.layer2?.issues?.join('\n') || 'None',
-            'Original Validation Input': res._meta?.narrative_excerpt || 'N/A',
-            'AI Rewritten Narrative': res.rewritten_narrative || 'N/A'
+            'Compliance Issues':        res.layer1?.issues?.join('\n') || 'None',
+            'Data Inconsistencies':     res.layer2?.issues?.join('\n') || 'None',
+            'Original Validation Input':res._meta?.narrative_excerpt || 'N/A',
+            'AI Rewritten Narrative':   res.rewritten_narrative || 'N/A',
         }));
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Batch Validation Results");
-
-        // Generate download
+        XLSX.utils.book_append_sheet(wb, ws, 'Batch Validation Results');
         XLSX.writeFile(wb, `Sentra_Batch_Validation_${period || 'Export'}.xlsx`);
     };
+
+    // Whether a previous run was interrupted mid-way
+    const isPartialRun = !loading && progress.total > 0 && progress.current < progress.total;
 
     return (
         <div className="validate-view page-container">
@@ -231,9 +244,7 @@ const BatchValidateView = () => {
                         </div>
                         <p style={{ color: 'var(--text-primary)', lineHeight: '1.5' }}>{error}</p>
                         <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-                            <button onClick={() => setError('')} className="btn btn-primary">
-                                Dismiss
-                            </button>
+                            <button onClick={() => setError('')} className="btn btn-primary">Dismiss</button>
                         </div>
                     </div>
                 </div>
@@ -349,6 +360,18 @@ const BatchValidateView = () => {
                                 </>
                             )}
                         </button>
+
+                        {/* Clear previous results */}
+                        {results.length > 0 && !loading && (
+                            <button
+                                onClick={clearBatchState}
+                                className="btn btn-outline"
+                                style={{ width: '100%', marginTop: '10px', padding: '9px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                            >
+                                <RotateCcw size={14} />
+                                Clear Results
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -371,6 +394,19 @@ const BatchValidateView = () => {
 
                     {(results.length > 0 || (loading && progress.total > 0)) && (
                         <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                            {/* Interrupted run banner */}
+                            {isPartialRun && (
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px',
+                                    padding: '12px 16px', borderRadius: '8px',
+                                    background: 'var(--status-warn-bg)', border: '1px solid var(--status-warn)',
+                                    color: 'var(--status-warn)', fontSize: '0.88rem',
+                                }}>
+                                    <AlertTriangle size={16} />
+                                    Previous run was interrupted ({progress.current}/{progress.total} completed). Upload the file again and re-run to finish.
+                                </div>
+                            )}
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
                                 <div>
@@ -406,7 +442,7 @@ const BatchValidateView = () => {
                                 </div>
                             </div>
 
-                            {/* Dynamic Progress Bar */}
+                            {/* Progress bar — only shown while actively loading */}
                             {(loading && progress.total > 0) && (
                                 <div style={{ background: 'var(--bg-secondary)', borderRadius: '8px', padding: '16px', border: '1px solid var(--border-color)' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.9rem' }}>
@@ -439,9 +475,9 @@ const BatchValidateView = () => {
                                         <tbody>
                                             {results.map((res: any, idx: number) => {
                                                 const displayVerdict = res.overall_verdict;
-                                                const vColor      = getVerdictColor(displayVerdict);
-                                                const isExpanded  = expandedRow === res.project_name;
-                                                const totalIssues = (res.layer1?.issues?.length || 0) + (res.layer2?.issues?.length || 0);
+                                                const vColor         = getVerdictColor(displayVerdict);
+                                                const isExpanded     = expandedRow === res.project_name;
+                                                const totalIssues    = (res.layer1?.issues?.length || 0) + (res.layer2?.issues?.length || 0);
 
                                                 return (
                                                     <React.Fragment key={idx}>
@@ -489,7 +525,6 @@ const BatchValidateView = () => {
                                                                     ) : (
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-                                                                            {/* Layer 1 */}
                                                                             {res.layer1?.issues?.length > 0 && (
                                                                                 <div style={{ padding: '16px', borderLeft: '3px solid var(--status-fail)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
                                                                                     <h4 style={{ color: 'var(--status-fail)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -503,7 +538,6 @@ const BatchValidateView = () => {
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* Layer 2 */}
                                                                             {res.layer2?.issues?.length > 0 && (
                                                                                 <div style={{ padding: '16px', borderLeft: '3px solid var(--status-warn)', background: 'var(--bg-secondary)', borderRadius: '0 8px 8px 0' }}>
                                                                                     <h4 style={{ color: 'var(--status-warn)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -523,7 +557,6 @@ const BatchValidateView = () => {
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* AI Rewrite Detail */}
                                                                             {res.rewritten_narrative && (
                                                                                 <div style={{ padding: '16px', background: 'var(--accent-blue-glow)', border: '1px solid var(--accent-blue)', borderRadius: '8px' }}>
                                                                                     <h4 style={{ color: 'var(--accent-blue)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -540,7 +573,6 @@ const BatchValidateView = () => {
                                                                 </td>
                                                             </tr>
                                                         )}
-
                                                     </React.Fragment>
                                                 );
                                             })}
