@@ -13,18 +13,12 @@ const AnalyticsView = () => {
 
     // ── Derived stats ─────────────────────────────────────────────────────────
 
-    const total = history.length;
-    const passCount  = history.filter(e => e.verdict === 'PASS').length;
-    const warnCount  = history.filter(e => e.verdict === 'WARN').length;
-    const failCount  = history.filter(e => e.verdict === 'FAIL').length;
-    const errorCount = history.filter(e => e.verdict === 'ERROR').length;
-
-    const scored     = history.filter(e => e.score !== null);
-    const avgScore   = scored.length > 0
-        ? (scored.reduce((sum, e) => sum + (e.score ?? 0), 0) / scored.length).toFixed(1)
-        : '—';
-
-    const batchRuns  = new Set(history.filter(e => e.batch_id).map(e => e.batch_id)).size;
+    const total           = history.length;
+    const passCount       = history.filter(e => e.verdict === 'PASS').length;
+    const warnCount       = history.filter(e => e.verdict === 'WARN').length;
+    const failCount       = history.filter(e => e.verdict === 'FAIL').length;
+    const individualCount = history.filter(e => e.type === 'individual').length;
+    const batchCount      = history.filter(e => e.type === 'batch').length;
 
     const passRate   = total > 0 ? Math.round((passCount / total) * 100) : 0;
     const warnRate   = total > 0 ? Math.round((warnCount / total) * 100) : 0;
@@ -87,12 +81,12 @@ const AnalyticsView = () => {
     // ── Summary cards data ────────────────────────────────────────────────────
 
     const cards = [
-        { label: 'TOTAL SCORED',  value: total,      sub: 'narratives',                           color: 'var(--text-primary)' },
-        { label: 'PASS',          value: passCount,   sub: `score ≥ 8`,                            color: 'var(--status-pass)'  },
-        { label: 'WARNINGS',      value: warnCount,   sub: `score 6–7`,                            color: 'var(--status-warn)'  },
-        { label: 'FAIL',          value: failCount,   sub: `score < 6`,                            color: 'var(--status-fail)'  },
-        { label: 'AVG SCORE',     value: avgScore,    sub: '/ 10',                                 color: 'var(--accent-blue)'  },
-        { label: 'BATCH RUNS',    value: batchRuns,   sub: 'batch sessions',                       color: 'var(--text-secondary)'},
+        { label: 'TOTAL SCORED',  value: total,           sub: 'narratives',            color: 'var(--text-primary)'  },
+        { label: 'PASS',          value: passCount,        sub: 'score ≥ 8',             color: 'var(--status-pass)'   },
+        { label: 'WARNINGS',      value: warnCount,        sub: 'score 6–7',             color: 'var(--status-warn)'   },
+        { label: 'FAIL',          value: failCount,        sub: 'score < 6',             color: 'var(--status-fail)'   },
+        { label: 'INDIVIDUAL',    value: individualCount,  sub: 'single validations',    color: 'var(--accent-blue)'   },
+        { label: 'BATCH',         value: batchCount,       sub: 'batch project entries', color: 'var(--text-secondary)'},
     ];
 
     return (
@@ -158,9 +152,6 @@ const AnalyticsView = () => {
                         )}
                         {failRate > 0 && (
                             <div style={{ width: `${failRate}%`, background: 'var(--status-fail)', transition: 'width 0.5s ease' }} title={`Fail ${failRate}%`} />
-                        )}
-                        {errorCount > 0 && (
-                            <div style={{ flex: 1, background: 'var(--border-color)' }} title="Error" />
                         )}
                     </div>
                     <div style={{ display: 'flex', gap: '20px', fontSize: '0.82rem' }}>
