@@ -511,13 +511,13 @@ const ValidateView = () => {
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '2rem', fontWeight: '800' }}>{result.layer1.compliance_score}/10</div>
+                                    <div style={{ fontSize: '2rem', fontWeight: '800' }}>{result.layer1?.compliance_score ?? '—'}/10</div>
                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Compliance Score</div>
                                 </div>
                             </div>
 
                             {/* Layer 1: Structural Issues */}
-                            {result.layer1.issues.length > 0 && (
+                            {(result.layer1?.issues?.length ?? 0) > 0 && (
                                 <div className="card">
                                     <h2 className="card-title" style={{ color: 'var(--status-fail)' }}>
                                         <AlertTriangle size={18} /> Format & Compliance Issues ({result.layer1.issues.length})
@@ -531,7 +531,7 @@ const ValidateView = () => {
                             )}
 
                             {/* Layer 2: Data Variances */}
-                            {result.layer2.issues.length > 0 && (
+                            {(result.layer2?.issues?.length ?? 0) > 0 && (
                                 <div className="card">
                                     <h2 className="card-title" style={{ color: 'var(--status-warn)' }}>
                                         <Info size={18} /> Data Inconsistencies ({result.layer2.issues.length})
@@ -544,7 +544,7 @@ const ValidateView = () => {
                                 </div>
                             )}
 
-                            {result.layer1.issues.length === 0 && result.layer2.issues.length === 0 && (
+                            {(result.layer1?.issues?.length ?? 0) === 0 && (result.layer2?.issues?.length ?? 0) === 0 && (
                                 <div className="card" style={{ borderColor: 'var(--status-pass)' }}>
                                     <h2 className="card-title" style={{ color: 'var(--status-pass)' }}>
                                         <CheckCircle2 size={18} /> Perfect Alignment
@@ -588,9 +588,11 @@ const ValidateView = () => {
                             )}
 
                             {/* Underlying Data Context */}
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '-8px' }}>
-                                EAC Shift Context: £{(result._meta.eac_variance_m || 0).toFixed(1)}m | Schedule Shift: {result._meta.schedule_days} days
-                            </div>
+                            {result._meta && (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textAlign: 'right', marginTop: '-8px' }}>
+                                    EAC Shift Context: £{(result._meta.eac_variance_m || 0).toFixed(1)}m | Schedule Shift: {result._meta.schedule_days ?? 0} days
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

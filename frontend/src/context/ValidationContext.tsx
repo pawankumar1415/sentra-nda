@@ -66,9 +66,12 @@ function loadFromStorage<T extends object>(key: string, fallback: T): T {
     try {
         const raw = localStorage.getItem(key);
         if (!raw) return fallback;
-        // Merge with fallback so any fields added after the data was saved
-        // always receive a safe default value instead of undefined.
-        return { ...fallback, ...(JSON.parse(raw) as T) };
+        const parsed = JSON.parse(raw) as T;
+        // Arrays must be returned as-is — spreading them produces a plain object.
+        // Objects are merged with the fallback so newly-added fields always get
+        // a safe default value even when the stored data predates them.
+        if (Array.isArray(fallback)) return parsed;
+        return { ...fallback, ...parsed };
     } catch {
         return fallback;
     }
