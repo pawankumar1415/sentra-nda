@@ -126,7 +126,7 @@ def _run_system(system_name: str, call_fn, projects: list, out_path: pathlib.Pat
         if i < len(projects):
             time.sleep(delay)
 
-    out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False))
+    out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
     ok      = sum(1 for r in results if r["status"] == "ok")
     errors  = sum(1 for r in results if r["status"] == "error")
     skipped = sum(1 for r in results if r["status"] == "skipped")

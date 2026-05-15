@@ -474,13 +474,13 @@ def main() -> None:
                 label  = f"{run} — {system}"
                 report = render_report(label, metrics)
                 out    = HERE / f"report_{run}_{system}.md"
-                out.write_text(report)
+                out.write_text(report, encoding="utf-8")
                 print(f"Wrote {out}")
 
             # Comparison report
             comp   = render_comparison(f"{run_a}/{system}", m_a, f"{run_b}/{system}", m_b)
             out    = HERE / f"report_compare_{system}_{run_a}_vs_{run_b}.md"
-            out.write_text(comp)
+            out.write_text(comp, encoding="utf-8")
             print(f"Wrote {out}")
     else:
         for system in systems:
@@ -492,12 +492,12 @@ def main() -> None:
             label  = f"{args.run_name} — {system}"
             report = render_report(label, metrics)
             out    = HERE / f"report_{args.run_name}_{system}.md"
-            out.write_text(report)
+            out.write_text(report, encoding="utf-8")
             print(f"Wrote {out}")
 
             # Also save raw metrics as JSON for programmatic use
             json_out = HERE / f"metrics_{args.run_name}_{system}.json"
-            json_out.write_text(json.dumps(metrics, indent=2, ensure_ascii=False))
+            json_out.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
             print(f"Wrote {json_out}")
 
 

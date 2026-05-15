@@ -144,7 +144,7 @@ def extract() -> list:
         print(f"  {project_name}{flag}")
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PATH.write_text(json.dumps(records, indent=2, ensure_ascii=False))
+    OUT_PATH.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nWrote {len(records)} records → {OUT_PATH}")
     return records
 
