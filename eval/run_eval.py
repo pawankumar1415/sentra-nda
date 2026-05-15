@@ -48,12 +48,15 @@ DEFAULT_PERIOD = ""    # leave empty → EAC lookup uses latest available
 
 # ── API callers ───────────────────────────────────────────────────────────────
 
-def _call_rag(base_url: str, function_key: str, project_name: str, narrative: str, period: str) -> dict:
+def _call_rag(base_url: str, function_key: str, jwt_token: str, project_name: str, narrative: str, period: str) -> dict:
     """POST /api/validate on the rag_function backend."""
     resp = requests.post(
         f"{base_url}/validate",
         json={"project_name": project_name, "narrative": narrative, "period": period},
-        headers={"x-functions-key": function_key},
+        headers={
+            "x-functions-key":  function_key,
+            "Authorization":    f"Bearer {jwt_token}",
+        },
         timeout=120,
     )
     resp.raise_for_status()
@@ -148,14 +151,18 @@ def main() -> None:
     print(f"Loaded {len(projects)} projects from ground truth.")
 
     if not args.skip_rag:
-        rag_base = os.getenv("RAG_BASE_URL", "").rstrip("/")
-        rag_key  = os.getenv("RAG_FUNCTION_KEY", "")
+        rag_base  = os.getenv("RAG_BASE_URL", "").rstrip("/")
+        rag_key   = os.getenv("RAG_FUNCTION_KEY", "")
+        rag_token = os.getenv("RAG_JWT_TOKEN", "")
         if not rag_base:
             print("\nWARN: RAG_BASE_URL not set in .env — skipping rag system.")
+        elif not rag_token:
+            print("\nWARN: RAG_JWT_TOKEN not set in .env — skipping rag system.")
+            print("  Get it from: browser DevTools → Application → Local Storage → token value")
         else:
             _run_system(
                 system_name="rag",
-                call_fn=lambda name, narrative, period: _call_rag(rag_base, rag_key, name, narrative, period),
+                call_fn=lambda name, narrative, period: _call_rag(rag_base, rag_key, rag_token, name, narrative, period),
                 projects=projects,
                 out_path=HERE / f"results_{args.run_name}_rag.json",
             )
