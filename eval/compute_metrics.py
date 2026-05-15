@@ -439,7 +439,7 @@ def _load(run_name: str, system: str) -> list:
     if not path.exists():
         print(f"WARN: {path} not found — skipping {system} for run '{run_name}'.")
         return []
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
@@ -456,7 +456,7 @@ def main() -> None:
         print(f"ERROR: {GT_PATH} not found.\nRun extract_ground_truth.py first.", file=sys.stderr)
         sys.exit(1)
 
-    ground_truth: list = json.loads(GT_PATH.read_text())
+    ground_truth: list = json.loads(GT_PATH.read_text(encoding="utf-8"))
     systems = ["rag", "agent"] if args.system == "both" else [args.system]
 
     if args.compare:

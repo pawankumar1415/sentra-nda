@@ -147,7 +147,7 @@ def main() -> None:
         print(f"ERROR: {GT_PATH} not found.\nRun extract_ground_truth.py first.", file=sys.stderr)
         sys.exit(1)
 
-    projects: list = json.loads(GT_PATH.read_text())
+    projects: list = json.loads(GT_PATH.read_text(encoding="utf-8"))
     print(f"Loaded {len(projects)} projects from ground truth.")
 
     if not args.skip_rag:
