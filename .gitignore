@@ -226,3 +226,10 @@ NDA Narrative deliverable definition - (3).docx
 # NDA project data files (sensitive — never commit)
 NDA Data/
 **/NDA Data/
+
+# Eval generated outputs — results, metrics and reports are local only
+eval/ground_truth.json
+eval/results_*.json
+eval/metrics_*.json
+eval/report_*.md
+eval/.env

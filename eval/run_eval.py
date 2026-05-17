@@ -65,12 +65,12 @@ def _call_rag(base_url: str, function_key: str, jwt_token: str, project_name: st
 
 def _call_agent(base_url: str, function_key: str, project_name: str, narrative: str, period: str) -> dict:
     """
-    POST /api/validate on the agent backend.
-    The agent wraps its result in a 'validation_result' JSON string — we unwrap it
-    so all downstream code works with the same flat structure as the rag response.
+    POST /api/pgvector/validate on the agent backend.
+    This route returns structured JSON directly (same shape as rag_function),
+    unlike /api/validate which returns a conversational text response.
     """
     resp = requests.post(
-        f"{base_url}/validate",
+        f"{base_url}/pgvector/validate",
         json={"project_name": project_name, "narrative": narrative, "period": period},
         headers={"x-functions-key": function_key},
         timeout=180,
