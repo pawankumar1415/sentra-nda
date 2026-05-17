@@ -34,6 +34,7 @@ try:
         batch_validate_pgvector,
         chat_pgvector,
         ensure_pgvector_schema,
+        get_validation_history,
         ingest_eac_pgvector,
         ingest_mppr_pgvector,
         list_projects_from_bytes as list_projects_pgvector_from_bytes,
@@ -54,6 +55,7 @@ except Exception as _pg_exc:
     batch_validate_pgvector           = _pgvector_unavailable
     chat_pgvector                     = _pgvector_unavailable
     ensure_pgvector_schema            = _pgvector_unavailable
+    get_validation_history            = _pgvector_unavailable
     ingest_eac_pgvector               = _pgvector_unavailable
     ingest_mppr_pgvector              = _pgvector_unavailable
     list_projects_pgvector_from_bytes = _pgvector_unavailable
@@ -762,3 +764,64 @@ def pgvector_chat(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json",
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /api/pgvector/history
+# Query params:
+#   project_name  — optional filter (partial match)
+#   limit         — max rows to return (default 50, max 200)
+#   offset        — pagination offset (default 0)
+#
+# Response:
+#   {
+#     "total": N,
+#     "items": [
+#       {
+#         "id":                  "uuid",
+#         "project_name":        "...",
+#         "period":              "P07",
+#         "narrative":           "...",
+#         "rewritten_narrative": "...",
+#         "compliance_score":    8,
+#         "overall_verdict":     "PASS",
+#         "issues":              [...],
+#         "validated_at":        "2025-05-17T10:30:00+00:00"
+#       }
+#     ]
+#   }
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="pgvector/history", methods=["GET"])
+def pgvector_history(req: func.HttpRequest) -> func.HttpResponse:
+    logger.info("GET /api/pgvector/history triggered.")
+
+    try:
+        project_name = req.params.get("project_name", "").strip() or None
+        limit  = min(int(req.params.get("limit",  50)),  200)
+        offset = max(int(req.params.get("offset",  0)),    0)
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "limit and offset must be integers."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    try:
+        result = get_validation_history(
+            project_name=project_name,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:
+        logger.exception("pgvector/history failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "Internal error", "detail": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    return func.HttpResponse(
+        json.dumps(result, ensure_ascii=False, indent=2),
+        status_code=200,
+        mimetype="application/json",
+    )

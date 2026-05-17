@@ -135,6 +135,26 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session
     ON chat_messages(session_id, id ASC);
 
+CREATE TABLE IF NOT EXISTS validation_history (
+    id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_name        TEXT        NOT NULL,
+    period              TEXT,
+    narrative           TEXT        NOT NULL,
+    rewritten_narrative TEXT,
+    compliance_score    INTEGER,
+    overall_verdict     TEXT,
+    issues              JSONB,
+    full_result         JSONB,
+    validated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    user_id             UUID
+);
+
+CREATE INDEX IF NOT EXISTS idx_validation_history_project
+    ON validation_history(project_name, validated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_validation_history_date
+    ON validation_history(validated_at DESC);
+
 CREATE INDEX IF NOT EXISTS nda_projects_embedding_idx
     ON nda_projects
     USING ivfflat ((embedding::halfvec({_EMBEDDING_DIMS})) halfvec_cosine_ops)
@@ -716,6 +736,13 @@ NARRATIVE TO VALIDATE:
         "schedule_days": eac_data["schedule_days"],
         "guidance_source": guidance_source,
     }
+
+    if not result.get("parse_error"):
+        try:
+            save_validation_history(project_name, period, narrative_text, result)
+        except Exception:
+            logger.warning("Failed to save validation history for %s", project_name, exc_info=True)
+
     return {
         "conversation_id":     agent_response["conversation_id"],
         "is_new_conversation": agent_response["is_new_conversation"],
@@ -807,6 +834,82 @@ def _save_turn(session_id: str, question: str, answer: str, metadata: Dict) -> N
             cur.execute("UPDATE chat_sessions SET updated_at = NOW() WHERE session_id = %s", (session_id,))
 
 
+def save_validation_history(
+    project_name: str,
+    period: str,
+    narrative: str,
+    result: Dict,
+) -> None:
+    """Persist one validation result to validation_history. Non-fatal if it fails."""
+    layer1 = result.get("layer1", {})
+    # Omit rendered HTML blobs — they're large and re-derivable
+    stored = {k: v for k, v in result.items() if k not in ("diff_html", "main_result_html")}
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO validation_history (
+                    project_name, period, narrative, rewritten_narrative,
+                    compliance_score, overall_verdict, issues, full_result
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    project_name,
+                    period or None,
+                    narrative,
+                    result.get("rewritten_narrative") or None,
+                    layer1.get("compliance_score"),
+                    result.get("overall_verdict"),
+                    json.dumps(layer1.get("issues", [])),
+                    json.dumps(stored),
+                ),
+            )
+
+
+def get_validation_history(
+    project_name: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict:
+    """Return paginated validation history rows, newest first."""
+    where = "WHERE project_name ILIKE %s" if project_name else ""
+    base_params: List[Any] = [f"%{project_name}%"] if project_name else []
+
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT COUNT(*) FROM validation_history {where}", base_params)
+            total = cur.fetchone()[0]
+
+            cur.execute(
+                f"""
+                SELECT id, project_name, period, narrative, rewritten_narrative,
+                       compliance_score, overall_verdict, issues, validated_at
+                FROM validation_history
+                {where}
+                ORDER BY validated_at DESC
+                LIMIT %s OFFSET %s
+                """,
+                base_params + [limit, offset],
+            )
+            rows = cur.fetchall()
+
+    return {
+        "total": total,
+        "items": [
+            {
+                "id":                  str(r[0]),
+                "project_name":        r[1],
+                "period":              r[2] or "",
+                "narrative":           r[3],
+                "rewritten_narrative": r[4] or "",
+                "compliance_score":    r[5],
+                "overall_verdict":     r[6] or "",
+                "issues":              r[7] if isinstance(r[7], list) else [],
+                "validated_at":        r[8].isoformat() if r[8] else "",
+            }
+            for r in rows
+        ],
+    }
 
 
 _INTENT_PROMPT = """You are a router. Analyze the user's question about the NDA nuclear decommissioning portfolio and determine the intent.
