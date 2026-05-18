@@ -783,6 +783,116 @@ def batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
     return {"status": "ok", "period": period, "total": len(results), "results": results}
 
 
+def pa_batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
+    """
+    Power Automate variant of pgvector batch validation.
+
+    Wraps batch_validate_pgvector() — which auto-saves each result to
+    validation_history via validate_narrative_pgvector — and returns the
+    same flat csv_rows format Power Automate's 'Create CSV table' expects.
+    """
+    import csv as _csv
+    import io as _io
+
+    def _ascii_safe(text: str) -> str:
+        return (
+            str(text)
+            .replace("…", "...").replace("—", "-").replace("–", "-")
+            .replace("‘", "'").replace("’", "'")
+            .replace("“", '"').replace("”", '"')
+            .replace("£", "GBP ")
+        )
+
+    def _join_issues(issues: List[str], max_issues: int = 5) -> str:
+        if not issues:
+            return "None"
+        trimmed = issues[:max_issues]
+        suffix = f"; ...and {len(issues) - max_issues} more" if len(issues) > max_issues else ""
+        return "; ".join(trimmed) + suffix
+
+    base    = batch_validate_pgvector(file_bytes, filename=filename)
+    period  = base.get("period", "")
+    results = base.get("results", [])
+
+    passed = failed = warned = skipped = errors = 0
+    csv_rows: List[Dict] = []
+
+    for r in results:
+        status = r.get("status", "error")
+
+        if status == "skipped":
+            verdict = "SKIPPED"; skipped += 1
+            score = None
+            layer1_issues = "No narrative text in file"
+            layer2_issues = "N/A"
+            rewritten = ""
+
+        elif status == "error":
+            verdict = "ERROR"; errors += 1
+            score = None
+            layer1_issues = _ascii_safe(r.get("validation_result", "Validation error"))
+            layer2_issues = "N/A"
+            rewritten = ""
+
+        else:
+            raw = r.get("validation_result", "{}")
+            try:
+                parsed = json.loads(raw) if isinstance(raw, str) else raw
+            except json.JSONDecodeError:
+                parsed = {}
+
+            if not parsed or parsed.get("parse_error"):
+                verdict = "PARSE_ERROR"; errors += 1
+                score = None
+                layer1_issues = "Agent response could not be parsed"
+                layer2_issues = "N/A"
+                rewritten = ""
+            else:
+                l1    = parsed.get("layer1", {})
+                l2    = parsed.get("layer2", {})
+                score = l1.get("compliance_score")
+                vraw  = parsed.get("overall_verdict", "")
+                verdict = vraw if vraw in ("PASS", "PASS_WITH_WARNINGS", "WARN", "FAIL") \
+                          else ("PASS" if (score or 0) >= 8 else ("WARN" if (score or 0) >= 6 else "FAIL"))
+                layer1_issues = _ascii_safe(_join_issues(l1.get("issues", [])))
+                layer2_issues = _ascii_safe(_join_issues(l2.get("issues", [])))
+                rewritten     = _ascii_safe(parsed.get("rewritten_narrative", ""))
+
+                if verdict == "PASS":         passed += 1
+                elif verdict == "FAIL":       failed += 1
+                else:                         warned += 1
+
+        csv_rows.append({
+            "Project Name":           _ascii_safe(r.get("project_name", "")),
+            "Period":                 period,
+            "Verdict":                verdict,
+            "Compliance Score":       score if score is not None else "-",
+            "Layer 1 Issues":         layer1_issues,
+            "Layer 2 Issues":         layer2_issues,
+            "AI Rewritten Narrative": rewritten,
+        })
+
+    _FIELDS = ["Project Name", "Period", "Verdict", "Compliance Score",
+               "Layer 1 Issues", "Layer 2 Issues", "AI Rewritten Narrative"]
+    buf = _io.StringIO()
+    writer = _csv.DictWriter(buf, fieldnames=_FIELDS, lineterminator="\r\n")
+    writer.writeheader()
+    writer.writerows(csv_rows)
+
+    return {
+        "period":         period,
+        "total":          len(results),
+        "passed":         passed,
+        "failed":         failed,
+        "warned":         warned,
+        "skipped":        skipped,
+        "errors":         errors,
+        "overall_status": "PASS" if (failed == 0 and errors == 0) else "FAIL",
+        "csv_rows":       csv_rows,
+        "csv_content":    buf.getvalue(),
+    }
+
+
 def _session_exists(session_id: str) -> bool:
     with DBConnection() as conn:
         with conn.cursor() as cur:

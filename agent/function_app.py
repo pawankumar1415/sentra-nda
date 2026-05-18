@@ -38,6 +38,7 @@ try:
         ingest_eac_pgvector,
         ingest_mppr_pgvector,
         list_projects_from_bytes as list_projects_pgvector_from_bytes,
+        pa_batch_validate_pgvector,
         search_projects_pgvector,
         validate_narrative_pgvector,
     )
@@ -57,6 +58,7 @@ except Exception as _pg_exc:
     ensure_pgvector_schema            = _pgvector_unavailable
     get_validation_history            = _pgvector_unavailable
     ingest_eac_pgvector               = _pgvector_unavailable
+    pa_batch_validate_pgvector        = _pgvector_unavailable
     ingest_mppr_pgvector              = _pgvector_unavailable
     list_projects_pgvector_from_bytes = _pgvector_unavailable
     search_projects_pgvector          = _pgvector_unavailable
@@ -481,7 +483,7 @@ def pa_batch_validate(req: func.HttpRequest) -> func.HttpResponse:
                 mimetype="application/json",
             )
 
-        result = run_pa_batch_validate(file_bytes, filename=filename)
+        result = pa_batch_validate_pgvector(file_bytes, filename=filename)
 
     except Exception as exc:
         logger.exception("PA batch validation failed.")
@@ -791,6 +793,46 @@ def pgvector_chat(req: func.HttpRequest) -> func.HttpResponse:
 #     ]
 #   }
 # ─────────────────────────────────────────────────────────────────────────────
+@app.route(route="pgvector/migrate", methods=["GET"])
+def pgvector_migrate(req: func.HttpRequest) -> func.HttpResponse:
+    """One-time migration — creates any missing tables. Safe to call multiple times."""
+    logger.info("pgvector/migrate triggered.")
+    ddl = """
+    CREATE TABLE IF NOT EXISTS validation_history (
+        id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_name        TEXT        NOT NULL,
+        period              TEXT,
+        narrative           TEXT        NOT NULL,
+        rewritten_narrative TEXT,
+        compliance_score    INTEGER,
+        overall_verdict     TEXT,
+        issues              JSONB,
+        full_result         JSONB,
+        validated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        user_id             UUID
+    );
+    CREATE INDEX IF NOT EXISTS idx_validation_history_project
+        ON validation_history(project_name, validated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_validation_history_date
+        ON validation_history(validated_at DESC);
+    """
+    try:
+        from pgvector_backend import DBConnection
+        with DBConnection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(ddl)
+        return func.HttpResponse(
+            json.dumps({"status": "ok", "message": "validation_history table ensured."}),
+            status_code=200, mimetype="application/json",
+        )
+    except Exception as exc:
+        logger.exception("pgvector/migrate failed: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"status": "error", "detail": str(exc)}),
+            status_code=500, mimetype="application/json",
+        )
+
+
 @app.route(route="pgvector/history", methods=["GET"])
 def pgvector_history(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("GET /api/pgvector/history triggered.")
