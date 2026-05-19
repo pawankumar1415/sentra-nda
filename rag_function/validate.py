@@ -172,8 +172,9 @@ _SYSTEM_PROMPT_TEMPLATE = """You are an NDA Narrative Validator. You check proje
    FAIL: Narrative has NO description of the project purpose whatsoever.
 
 2. DCA RAG
-   PASS: Narrative states the DCA status AND uses "remains as" or "has changed to" phrasing.
-   FAIL: DCA status is stated WITHOUT "remains as" or "has changed to" (e.g. "DCA is Green" alone is a FAIL).
+   PASS: Narrative mentions the DCA, SRO, or SPA status with any colour (Green/Amber/Red) or directional word. Any phrasing is acceptable — e.g. "DCA remains Green", "DCA is Red", "DCA has deteriorated to Amber", "Delivery Confidence Assessment remains Amber". The content matters, not the exact wording.
+   FAIL: There is NO mention of DCA, SRO, or SPA status anywhere in the narrative.
+   N/A: DCA is not applicable to this project.
 
 3. PROJECT BENEFIT
    PASS: Narrative contains ANY statement about the status of project benefits or benefit milestones (e.g. "benefits remain on track", "first benefit milestone is protected", "benefits at risk").
@@ -190,8 +191,8 @@ _SYSTEM_PROMPT_TEMPLATE = """You are an NDA Narrative Validator. You check proje
    FAIL: There IS schedule movement in the data but the narrative does not mention it.
 
 6. BASELINE RAG
-   PASS: Narrative contains a Baseline RAG statement using the stem "Baseline RAG status against SL P50 Project Baseline is".
-   FAIL: Baseline RAG is mentioned but without this mandatory stem.
+   PASS: Narrative mentions the Baseline RAG status with any colour or directional statement. Any phrasing is acceptable — e.g. "Baseline RAG remains Green", "Baseline RAG is Red", "Baseline RAG remains Amber", "Baseline RAG sits at Red". The content matters, not the exact stem.
+   FAIL: There is NO mention of Baseline RAG status at all when it should be reported.
    N/A: Baseline RAG is not applicable to this project.
 
 7. BASELINE MOVEMENT
@@ -200,8 +201,8 @@ _SYSTEM_PROMPT_TEMPLATE = """You are an NDA Narrative Validator. You check proje
    FAIL: The baseline HAS moved in the data but the narrative does not mention it.
 
 8. HIGHLIGHTS / ISSUES
-   PASS: Narrative contains a section beginning with "Highlights / issues in period:" or "Highlights and issues in period:".
-   FAIL: There are highlights or issues to report but the mandatory stem is absent or missing entirely.
+   PASS: Narrative describes any notable activities, highlights, issues, risks, or events in the reporting period — whether using a "Highlights" heading or as inline narrative. Descriptions like "In period X was completed…", "The project continues to be impacted by…", "Highlights in period…", "Only issue has been…" all count as PASS.
+   FAIL: There are clearly issues or notable activities in the period data but the narrative makes NO mention of any of them — it is purely a status summary with nothing describing what happened in the period.
    N/A: There are genuinely no highlights or issues in the period.
 
 9. CAPABILITY & CAPACITY (CAP/CAP) RAG
