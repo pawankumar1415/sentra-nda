@@ -702,7 +702,7 @@ def _build_main_result_html(result: Dict) -> str:
 
     return (
         "<b>Layer 1 &#8212; Guidance &amp; Structure</b><br>"
-        f"Compliance Score: <b>{score} / 10</b><br><br>"
+        f"Compliance Score: {score}/10<br><br>"
         f"<b>Issues Found:</b><ul>{issues_li}</ul>"
         + (f"<b>Rules Met:</b><ul>{passed_li}</ul>" if passed_li else "")
         + "<hr style='border:none;border-top:1px solid #e5e7eb;margin:8px 0'>"
