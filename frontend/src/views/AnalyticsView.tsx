@@ -87,12 +87,12 @@ const AnalyticsView = () => {
     // ── Summary cards data ────────────────────────────────────────────────────
 
     const cards = [
-        { label: 'TOTAL SCORED',  value: total,           sub: 'narratives',            color: 'var(--text-primary)'  },
-        { label: 'PASS',          value: passCount,        sub: 'score ≥ 8',             color: 'var(--status-pass)'   },
-        { label: 'WARNINGS',      value: warnCount,        sub: 'score 6–7',             color: 'var(--status-warn)'   },
-        { label: 'FAIL',          value: failCount,        sub: 'score < 6',             color: 'var(--status-fail)'   },
-        { label: 'INDIVIDUAL',    value: individualCount,  sub: 'single validations',    color: 'var(--accent-blue)'   },
-        { label: 'BATCH',         value: batchCount,       sub: 'batch project entries', color: 'var(--text-secondary)'},
+        { label: 'TOTAL PROJECTS', value: total,           sub: 'narratives',            color: 'var(--text-primary)'  },
+        { label: 'PASS',           value: passCount,        sub: 'score ≥ 8',             color: 'var(--status-pass)'   },
+        { label: 'WARNINGS',       value: warnCount,        sub: 'score 6–7',             color: 'var(--status-warn)'   },
+        { label: 'FAIL',           value: failCount,        sub: 'score < 6',             color: 'var(--status-fail)'   },
+        { label: 'INDIVIDUAL',     value: individualCount,  sub: 'single validations',    color: 'var(--accent-blue)'   },
+        { label: 'BATCH',          value: batchCount,       sub: 'batch project entries', color: 'var(--text-secondary)'},
     ];
 
     return (
