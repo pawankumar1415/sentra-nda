@@ -1109,29 +1109,94 @@ def _detect_intent(question: str) -> Dict[str, Any]:
         return {"intent": "project_query", "project_names": []}
 
 
-def _get_portfolio_summary() -> str:
-    sql = """
-        SELECT project_name, dca_rag_status, capability_capacity_rag,
-               eac_variance, schedule_variance_days
-        FROM nda_projects
-        WHERE period_short_name = (
-            SELECT period_short_name FROM nda_projects
-            ORDER BY period_short_name DESC LIMIT 1
-        )
-    """
-    context = "LATEST PORTFOLIO DATA:\n"
+_RAG_COLOR_RE = re.compile(r'\b(red|amber|green)\b', re.IGNORECASE)
+
+
+def _get_portfolio_summary(period: Optional[str] = None) -> str:
+    if period:
+        sql = """
+            SELECT project_name, dca_rag_status, capability_capacity_rag,
+                   eac_variance, schedule_variance_days, period_short_name
+            FROM nda_projects
+            WHERE period_short_name ILIKE %s
+            ORDER BY project_name
+        """
+        params: tuple = (f"%{period}%",)
+        label = f"PORTFOLIO DATA (Period: {period.upper()}):\n"
+    else:
+        sql = """
+            SELECT project_name, dca_rag_status, capability_capacity_rag,
+                   eac_variance, schedule_variance_days, period_short_name
+            FROM nda_projects
+            WHERE period_short_name = (
+                SELECT period_short_name FROM nda_projects
+                ORDER BY period_short_name DESC LIMIT 1
+            )
+            ORDER BY project_name
+        """
+        params = ()
+        label = "LATEST PORTFOLIO DATA:\n"
+
+    context = label
     with DBConnection() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute(sql, params)
             rows = cur.fetchall()
             if not rows:
-                return "No portfolio data available in the database."
+                return f"No portfolio data available{' for period ' + period if period else ''}."
             for r in rows:
-                eac_v = r[3] if r[3] is not None else 0.0
+                eac_v   = r[3] if r[3] is not None else 0.0
                 sched_v = r[4] if r[4] is not None else 0
                 context += (
-                    f"- {r[0]}: RAG={r[1]}, CapRAG={r[2]}, "
+                    f"- {r[0]} ({r[5]}): RAG={r[1]}, CapRAG={r[2]}, "
                     f"EAC Variance=£{eac_v/1_000_000:.2f}m, Schedule Slip={sched_v} days\n"
+                )
+    return context
+
+
+def _get_status_filtered_context(rag_status: str, period: Optional[str] = None) -> str:
+    """Direct query for projects matching a RAG colour, optionally filtered by period."""
+    if period:
+        sql = """
+            SELECT project_name, period_short_name, dca_rag_status,
+                   capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
+            FROM nda_projects
+            WHERE dca_rag_status ILIKE %s
+              AND period_short_name ILIKE %s
+            ORDER BY project_name
+        """
+        params: tuple = (f"%{rag_status}%", f"%{period}%")
+        label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS IN PERIOD {period.upper()}:\n"
+    else:
+        sql = """
+            SELECT project_name, period_short_name, dca_rag_status,
+                   capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
+            FROM nda_projects
+            WHERE dca_rag_status ILIKE %s
+              AND period_short_name = (
+                  SELECT period_short_name FROM nda_projects
+                  ORDER BY period_short_name DESC LIMIT 1
+              )
+            ORDER BY project_name
+        """
+        params = (f"%{rag_status}%",)
+        label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS (LATEST PERIOD):\n"
+
+    context = label
+    with DBConnection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            if not rows:
+                return f"No projects found with {rag_status} RAG status{' in period ' + period if period else ' in the latest period'}."
+            for r in rows:
+                eac_v   = r[4] if r[4] is not None else 0.0
+                sched_v = r[5] if r[5] is not None else 0
+                narrative_snippet = (r[6] or "")[:300]
+                context += (
+                    f"- {r[0]} ({r[1]}): DCA RAG={r[2]}, CapRAG={r[3]}, "
+                    f"EAC Variance=£{eac_v/1_000_000:.2f}m, Schedule Slip={sched_v} days\n"
+                    f"  Narrative: {narrative_snippet}\n"
                 )
     return context
 
@@ -1254,9 +1319,14 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     logger.info("pgvector chat — intent: %s, projects: %s, periods: %s, session: %s",
                 intent, projects, periods, session_id)
 
-    # Gather context based on intent
-    if intent == "portfolio_summary":
-        context = _get_portfolio_summary()
+    # Detect RAG colour mentions (Red / Amber / Green) in the question
+    rag_colors = [m.group(0) for m in _RAG_COLOR_RE.finditer(question)]
+
+    # Gather context based on intent — RAG colour filter takes priority
+    if rag_colors:
+        context = _get_status_filtered_context(rag_colors[0], periods[0] if periods else None)
+    elif intent == "portfolio_summary":
+        context = _get_portfolio_summary(periods[0] if periods else None)
     elif intent == "eac_query":
         context = _get_eac_context(projects) + "\n\n" + _vector_chat_context(question, projects, top_k=2, periods=periods)
     elif intent == "general":
