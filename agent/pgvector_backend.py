@@ -1290,16 +1290,16 @@ def _vector_chat_context(
 
 
 def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
-    is_new = False
-
-    if session_id and _session_exists(session_id):
-        history = _load_history(session_id)
+    # Load history from blob storage — where _agent_chat actually persists turns.
+    # Previously this loaded from PostgreSQL (via _load_history) but _save_turn was
+    # never called in this path, so PostgreSQL history was always empty and
+    # project name recovery for follow-up questions never worked.
+    if session_id:
+        from agent_runner import _load_conversation_history
+        history = _load_conversation_history(session_id) or []
     else:
-        if session_id:
-            logger.warning("session_id %s not found — creating new session", session_id)
-        session_id = _create_session()
+        session_id = str(uuid.uuid4())
         history = []
-        is_new = True
 
     # Detect intent and extract project/period references
     intent_data = _detect_intent(question)
@@ -1307,7 +1307,8 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     projects = intent_data["project_names"]
     periods = [m.upper() for m in re.findall(r"\bP\d{2}\b", question, re.IGNORECASE)]
 
-    # Resolve project names from recent history if not found in question
+    # Recover project names from the last assistant turn for follow-up questions
+    # e.g. "tell me about BEPPS2" → "what is its EAC?" resolves BEPPS2 from history
     if not projects and history:
         last_assistant = next(
             (m["content"] for m in reversed(history) if m["role"] == "assistant"), ""
@@ -1322,7 +1323,7 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     # Detect RAG colour mentions (Red / Amber / Green) in the question
     rag_colors = [m.group(0) for m in _RAG_COLOR_RE.finditer(question)]
 
-    # Gather context based on intent — RAG colour filter takes priority
+    # Gather context — RAG colour filter takes priority over intent routing
     if rag_colors:
         context = _get_status_filtered_context(rag_colors[0], periods[0] if periods else None)
     elif intent == "portfolio_summary":
@@ -1336,8 +1337,5 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
 
     from chat import run_chat as _agent_chat
 
-    # Prepend the PGVector context to the question so the Foundry Agent
-    # has it available alongside any context it retrieves from AI Search.
     enriched_question = f"[PGVECTOR CONTEXT]\n{context}\n\n[USER QUESTION]\n{question}"
-
     return _agent_chat(question=enriched_question, session_id=session_id)
