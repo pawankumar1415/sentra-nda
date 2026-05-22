@@ -819,10 +819,12 @@ def batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
             continue
         try:
             val = validate_narrative_pgvector(project_name, narrative, period)
+            parsed_val = json.loads(val["validation_result"])
             results.append({
-                "project_name": project_name,
-                "status": "ok",
-                "validation_result": val["validation_result"],
+                "project_name":    project_name,
+                "status":          "ok",
+                "validation_result": parsed_val.get("main_result_html", val["validation_result"]),
+                "_validation_data": parsed_val,
                 "conversation_id": val["conversation_id"],
             })
         except Exception as exc:
@@ -888,11 +890,13 @@ def pa_batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
             rewritten = ""
 
         else:
-            raw = r.get("validation_result", "{}")
-            try:
-                parsed = json.loads(raw) if isinstance(raw, str) else raw
-            except json.JSONDecodeError:
-                parsed = {}
+            parsed = r.get("_validation_data")
+            if parsed is None:
+                raw = r.get("validation_result", "{}")
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except json.JSONDecodeError:
+                    parsed = {}
 
             if not parsed or parsed.get("parse_error"):
                 verdict = "PARSE_ERROR"; errors += 1
