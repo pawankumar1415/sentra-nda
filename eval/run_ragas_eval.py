@@ -158,7 +158,6 @@ def run_evaluation(
     llm,
     embeddings,
 ) -> dict:
-    import asyncio
     from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
 
     filtered = records
@@ -197,11 +196,8 @@ def run_evaluation(
         "ground_truth":        lambda s: s.reference,
     }
 
-    def _build_kwargs(metric_obj, sample):
-        """Introspect metric.ascore signature and supply matching sample fields."""
-        fn = getattr(metric_obj, "ascore", None)
-        if fn is None:
-            raise AttributeError(f"{type(metric_obj).__name__} has no ascore method")
+    def _build_kwargs(fn, sample):
+        """Introspect a score method signature and supply matching sample fields."""
         sig = inspect.signature(fn)
         return {
             p: _FIELD_MAP[p](sample)
@@ -209,14 +205,17 @@ def run_evaluation(
             if p in _FIELD_MAP
         }
 
-    async def _score_all():
+    def _score_all():
         buckets: dict[str, list[float]] = {k: [] for k in metric_names}
         for i, sample in enumerate(dataset.samples, 1):
             print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
             for metric, name in zip(metrics, metric_names):
                 try:
-                    kwargs = _build_kwargs(metric, sample)
-                    val = await metric.ascore(**kwargs)
+                    score_fn = getattr(metric, "score", None)
+                    if score_fn is None:
+                        raise AttributeError(f"{type(metric).__name__} has no score() method")
+                    kwargs = _build_kwargs(score_fn, sample)
+                    val = score_fn(**kwargs)
                     if val is not None:
                         buckets[name].append(float(val))
                 except Exception as exc:
@@ -225,7 +224,7 @@ def run_evaluation(
         print()
         return buckets
 
-    buckets = asyncio.run(_score_all())
+    buckets = _score_all()
 
     def _avg(name):
         vals = buckets.get(name, [])
