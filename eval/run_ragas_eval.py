@@ -87,7 +87,7 @@ def _build_llm_and_embeddings():
     if endpoint and api_key:
         from openai import AzureOpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import embedding_factory
+        from ragas.embeddings import OpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
         az_client = _patch_for_o_series(AzureOpenAI(
@@ -101,18 +101,18 @@ def _build_llm_and_embeddings():
             api_version=api_version,
         )
         llm        = llm_factory(chat_dep, client=az_client)
-        embeddings = embedding_factory(emb_dep, client=emb_client)
+        embeddings = OpenAIEmbeddings(model=emb_dep, client=emb_client)
         return llm, embeddings
 
     elif openai_key:
         from openai import OpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import embedding_factory
+        from ragas.embeddings import OpenAIEmbeddings
 
         print("  LLM: Standard OpenAI (gpt-4o)")
         client     = OpenAI(api_key=openai_key)
         llm        = llm_factory("gpt-4o", client=client)
-        embeddings = embedding_factory("text-embedding-3-small", client=client)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", client=client)
         return llm, embeddings
 
     else:
