@@ -171,13 +171,13 @@ def run_evaluation(
         return {}
 
     metrics = [
-        Faithfulness(),
-        AnswerRelevancy(),
-        ContextPrecision(),
+        Faithfulness(llm=llm),
+        AnswerRelevancy(llm=llm, embeddings=embeddings),
+        ContextPrecision(llm=llm),
     ]
 
     print(f"  Running RAGAS on {n} questions...")
-    result = evaluate(dataset, metrics=metrics, llm=llm, embeddings=embeddings)
+    result = evaluate(dataset, metrics=metrics)
 
     # Result keys vary slightly by version — try both naming styles
     def _get(key, alt=None):
