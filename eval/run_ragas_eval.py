@@ -53,7 +53,8 @@ def _strip_html(text: str) -> str:
 
 def _build_llm_and_embeddings():
     """
-    Build LangChain Azure OpenAI wrappers for RAGAS.
+    Build RAGAS LLM and embeddings using the modern llm_factory / embedding_factory API.
+    Supports Azure OpenAI (preferred) or standard OpenAI as fallback.
     Fails fast with a clear message if credentials are missing.
     """
     endpoint    = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
@@ -64,35 +65,30 @@ def _build_llm_and_embeddings():
     openai_key  = os.environ.get("OPENAI_API_KEY", "").strip()
 
     if endpoint and api_key:
-        from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
-        from ragas.llms import LangchainLLMWrapper
-        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from openai import AzureOpenAI
+        from ragas.llms import llm_factory
+        from ragas.embeddings import embedding_factory
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        llm = AzureChatOpenAI(
+        client = AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
-            azure_deployment=chat_dep,
-            temperature=0,
         )
-        embeddings = AzureOpenAIEmbeddings(
-            azure_endpoint=endpoint,
-            api_key=api_key,
-            api_version=api_version,
-            azure_deployment=emb_dep,
-        )
-        return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(embeddings)
+        llm        = llm_factory(chat_dep, client=client)
+        embeddings = embedding_factory("openai", model=emb_dep, client=client)
+        return llm, embeddings
 
     elif openai_key:
-        from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-        from ragas.llms import LangchainLLMWrapper
-        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from openai import OpenAI
+        from ragas.llms import llm_factory
+        from ragas.embeddings import embedding_factory
 
         print("  LLM: Standard OpenAI (gpt-4o)")
-        llm        = ChatOpenAI(model="gpt-4o", temperature=0)
-        embeddings = OpenAIEmbeddings()
-        return LangchainLLMWrapper(llm), LangchainEmbeddingsWrapper(embeddings)
+        client     = OpenAI(api_key=openai_key)
+        llm        = llm_factory("gpt-4o", client=client)
+        embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
+        return llm, embeddings
 
     else:
         print("ERROR: No LLM credentials found.")
