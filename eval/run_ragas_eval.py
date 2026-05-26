@@ -56,17 +56,26 @@ def _patch_for_o_series(client):
     Fix kwargs that RAGAS/instructor passes but o-series models reject:
       - max_tokens      → max_completion_tokens
       - temperature     → removed (o-series only accepts the default of 1)
+    Patches both sync (create) and async (acreate) paths.
     """
-    orig = client.chat.completions.create
-
-    def _create(*args, **kwargs):
+    def _fix(kwargs):
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         if "temperature" in kwargs and kwargs["temperature"] != 1:
             del kwargs["temperature"]
-        return orig(*args, **kwargs)
+        return kwargs
 
-    client.chat.completions.create = _create
+    orig_sync  = client.chat.completions.create
+    orig_async = client.chat.completions.acreate
+
+    def _create(*args, **kwargs):
+        return orig_sync(*args, **_fix(kwargs))
+
+    async def _acreate(*args, **kwargs):
+        return await orig_async(*args, **_fix(kwargs))
+
+    client.chat.completions.create  = _create
+    client.chat.completions.acreate = _acreate
     return client
 
 
@@ -189,7 +198,7 @@ def run_evaluation(
                     if val is not None:
                         buckets[name].append(float(val))
                 except Exception as exc:
-                    pass
+                    print(f"\n  WARN [{name}] sample {i}: {exc}")
         print()
         return buckets
 
