@@ -154,8 +154,8 @@ def run_evaluation(
     llm,
     embeddings,
 ) -> dict:
+    import asyncio
     from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
-    from ragas import evaluate
 
     filtered = records
     if intent_filter:
@@ -175,20 +175,33 @@ def run_evaluation(
         AnswerRelevancy(llm=llm, embeddings=embeddings),
         ContextPrecision(llm=llm),
     ]
+    metric_names = ["faithfulness", "answer_relevancy", "context_precision"]
 
     print(f"  Running RAGAS on {n} questions...")
-    result = evaluate(dataset, metrics=metrics)
 
-    # Result keys vary slightly by version — try both naming styles
-    def _get(key, alt=None):
-        for k in [key, alt or key]:
-            if k in result:
-                return round(float(result[k]), 4)
-        return None
+    async def _score_all():
+        buckets: dict[str, list[float]] = {k: [] for k in metric_names}
+        for i, sample in enumerate(dataset.samples, 1):
+            print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
+            for metric, name in zip(metrics, metric_names):
+                try:
+                    val = await metric.single_turn_ascore(sample)
+                    if val is not None:
+                        buckets[name].append(float(val))
+                except Exception as exc:
+                    pass
+        print()
+        return buckets
 
-    faithfulness_score    = _get("faithfulness")
-    answer_rel_score      = _get("answer_relevancy")
-    context_prec_score    = _get("context_precision")
+    buckets = asyncio.run(_score_all())
+
+    def _avg(name):
+        vals = buckets.get(name, [])
+        return round(sum(vals) / len(vals), 4) if vals else None
+
+    faithfulness_score    = _avg("faithfulness")
+    answer_rel_score      = _avg("answer_relevancy")
+    context_prec_score    = _avg("context_precision")
 
     scores = {
         "backend":           backend,
