@@ -54,28 +54,23 @@ def _strip_html(text: str) -> str:
 def _patch_for_o_series(client):
     """
     Fix kwargs that RAGAS/instructor passes but o-series models reject:
-      - max_tokens      → max_completion_tokens
-      - temperature     → removed (o-series only accepts the default of 1)
-    Patches both sync (create) and async (acreate) paths.
+      - max_tokens  → max_completion_tokens
+      - temperature → set to 1 (o-series only accepts the default)
+    Patches sync create; async path in modern SDK uses AsyncAzureOpenAI separately.
     """
-    def _fix(kwargs):
+    def _fix(kwargs: dict) -> dict:
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
         if "temperature" in kwargs and kwargs["temperature"] != 1:
-            del kwargs["temperature"]
+            kwargs["temperature"] = 1
         return kwargs
 
-    orig_sync  = client.chat.completions.create
-    orig_async = client.chat.completions.acreate
+    orig_sync = client.chat.completions.create
 
     def _create(*args, **kwargs):
         return orig_sync(*args, **_fix(kwargs))
 
-    async def _acreate(*args, **kwargs):
-        return await orig_async(*args, **_fix(kwargs))
-
-    client.chat.completions.create  = _create
-    client.chat.completions.acreate = _acreate
+    client.chat.completions.create = _create
     return client
 
 
@@ -195,10 +190,15 @@ def run_evaluation(
             for metric, name in zip(metrics, metric_names):
                 try:
                     val = await metric.single_turn_ascore(sample)
+                    if i == 1:
+                        print(f"\n  DEBUG [{name}] first sample → {val!r} (type={type(val).__name__})")
                     if val is not None:
                         buckets[name].append(float(val))
+                    else:
+                        if i <= 3:
+                            print(f"\n  WARN [{name}] sample {i}: returned None")
                 except Exception as exc:
-                    print(f"\n  WARN [{name}] sample {i}: {exc}")
+                    print(f"\n  ERROR [{name}] sample {i}: {type(exc).__name__}: {exc}")
         print()
         return buckets
 
