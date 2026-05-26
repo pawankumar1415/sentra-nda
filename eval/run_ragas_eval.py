@@ -51,25 +51,27 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text or "").strip()
 
 
-def _patch_for_o_series(client):
-    """
-    Fix kwargs that RAGAS/instructor passes but o-series models reject:
-      - max_tokens  → max_completion_tokens
-      - temperature → set to 1 (o-series only accepts the default)
-    Patches sync create; async path in modern SDK uses AsyncAzureOpenAI separately.
-    """
-    def _fix(kwargs: dict) -> dict:
-        if "max_tokens" in kwargs:
-            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
-        if "temperature" in kwargs and kwargs["temperature"] != 1:
-            kwargs["temperature"] = 1
-        return kwargs
+def _fix_o_series_kwargs(kwargs: dict) -> dict:
+    """Remove params that o-series models reject."""
+    if "max_tokens" in kwargs:
+        kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+    if "temperature" in kwargs and kwargs["temperature"] != 1:
+        kwargs["temperature"] = 1
+    return kwargs
 
-    orig_sync = client.chat.completions.create
 
+def _patch_sync(client):
+    orig = client.chat.completions.create
     def _create(*args, **kwargs):
-        return orig_sync(*args, **_fix(kwargs))
+        return orig(*args, **_fix_o_series_kwargs(kwargs))
+    client.chat.completions.create = _create
+    return client
 
+
+def _patch_async(client):
+    orig = client.chat.completions.create
+    async def _create(*args, **kwargs):
+        return await orig(*args, **_fix_o_series_kwargs(kwargs))
     client.chat.completions.create = _create
     return client
 
@@ -89,12 +91,13 @@ def _build_llm_and_embeddings():
     openai_key  = os.environ.get("OPENAI_API_KEY", "").strip()
 
     if endpoint and api_key:
-        from openai import AzureOpenAI
+        from openai import AsyncAzureOpenAI, AzureOpenAI
         from ragas.llms import llm_factory
         from ragas.embeddings import OpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        az_client = _patch_for_o_series(AzureOpenAI(
+        # RAGAS 0.4.3 metric.score() calls agenerate() → requires async client
+        llm_client = _patch_async(AsyncAzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
@@ -104,19 +107,20 @@ def _build_llm_and_embeddings():
             api_key=api_key,
             api_version=api_version,
         )
-        llm        = llm_factory(chat_dep, client=az_client)
+        llm        = llm_factory(chat_dep, client=llm_client)
         embeddings = OpenAIEmbeddings(model=emb_dep, client=emb_client)
         return llm, embeddings
 
     elif openai_key:
-        from openai import OpenAI
+        from openai import AsyncOpenAI, AzureOpenAI
         from ragas.llms import llm_factory
         from ragas.embeddings import OpenAIEmbeddings
 
         print("  LLM: Standard OpenAI (gpt-4o)")
-        client     = OpenAI(api_key=openai_key)
-        llm        = llm_factory("gpt-4o", client=client)
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", client=client)
+        llm_client = AsyncOpenAI(api_key=openai_key)
+        emb_client = AzureOpenAI(api_key=openai_key)
+        llm        = llm_factory("gpt-4o", client=llm_client)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", client=emb_client)
         return llm, embeddings
 
     else:
@@ -182,40 +186,20 @@ def run_evaluation(
 
     print(f"  Running RAGAS on {n} questions...")
 
-    import inspect
-
-    # Map every parameter name ragas might use → the matching SingleTurnSample field
-    _FIELD_MAP = {
-        "user_input":          lambda s: s.user_input,
-        "question":            lambda s: s.user_input,
-        "response":            lambda s: s.response,
-        "answer":              lambda s: s.response,
-        "retrieved_contexts":  lambda s: s.retrieved_contexts,
-        "contexts":            lambda s: s.retrieved_contexts,
-        "reference":           lambda s: s.reference,
-        "ground_truth":        lambda s: s.reference,
-    }
-
-    def _build_kwargs(fn, sample):
-        """Introspect a score method signature and supply matching sample fields."""
-        sig = inspect.signature(fn)
-        return {
-            p: _FIELD_MAP[p](sample)
-            for p in sig.parameters
-            if p in _FIELD_MAP
-        }
-
     def _score_all():
         buckets: dict[str, list[float]] = {k: [] for k in metric_names}
         for i, sample in enumerate(dataset.samples, 1):
             print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
+            # Pass all sample fields; each metric uses only what it needs via **kwargs
+            sample_kwargs = {
+                "user_input":         sample.user_input,
+                "response":           sample.response,
+                "retrieved_contexts": sample.retrieved_contexts,
+                "reference":          sample.reference,
+            }
             for metric, name in zip(metrics, metric_names):
                 try:
-                    score_fn = getattr(metric, "score", None)
-                    if score_fn is None:
-                        raise AttributeError(f"{type(metric).__name__} has no score() method")
-                    kwargs = _build_kwargs(score_fn, sample)
-                    val = score_fn(**kwargs)
+                    val = metric.score(**sample_kwargs)
                     if val is not None:
                         buckets[name].append(float(val))
                 except Exception as exc:
