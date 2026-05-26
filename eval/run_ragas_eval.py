@@ -53,9 +53,10 @@ def _strip_html(text: str) -> str:
 
 def _build_llm_and_embeddings():
     """
-    Build RAGAS LLM and embeddings using the modern llm_factory / embedding_factory API.
-    Supports Azure OpenAI (preferred) or standard OpenAI as fallback.
-    Fails fast with a clear message if credentials are missing.
+    Build RAGAS LLM and embeddings wrappers.
+    Azure OpenAI (preferred) or standard OpenAI as fallback.
+    LLM  → llm_factory (ragas.llms)
+    Emb  → LangchainEmbeddingsWrapper around AzureOpenAIEmbeddings / OpenAIEmbeddings
     """
     endpoint    = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
     api_key     = os.environ.get("AZURE_OPENAI_API_KEY",  "").strip()
@@ -67,27 +68,36 @@ def _build_llm_and_embeddings():
     if endpoint and api_key:
         from openai import AzureOpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import OpenAIEmbeddings
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from langchain_openai import AzureOpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        client = AzureOpenAI(
+        az_client = AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
         )
-        llm        = llm_factory(chat_dep, client=client)
-        embeddings = OpenAIEmbeddings(model=emb_dep, openai_client=client)
+        llm = llm_factory(chat_dep, client=az_client)
+        embeddings = LangchainEmbeddingsWrapper(
+            AzureOpenAIEmbeddings(
+                azure_endpoint=endpoint,
+                api_key=api_key,
+                api_version=api_version,
+                azure_deployment=emb_dep,
+            )
+        )
         return llm, embeddings
 
     elif openai_key:
-        from openai import OpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import OpenAIEmbeddings
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from langchain_openai import OpenAIEmbeddings as LCOpenAIEmbeddings
 
         print("  LLM: Standard OpenAI (gpt-4o)")
-        client     = OpenAI(api_key=openai_key)
-        llm        = llm_factory("gpt-4o", client=client)
-        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_client=client)
+        llm = llm_factory("gpt-4o")
+        embeddings = LangchainEmbeddingsWrapper(
+            LCOpenAIEmbeddings(model="text-embedding-3-small", api_key=openai_key)
+        )
         return llm, embeddings
 
     else:
@@ -129,7 +139,7 @@ def run_evaluation(
     llm,
     embeddings,
 ) -> dict:
-    from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
+    from ragas.metrics import Faithfulness, AnswerRelevancy, ContextPrecision
     from ragas import evaluate
 
     filtered = records
@@ -146,13 +156,13 @@ def run_evaluation(
         return {}
 
     metrics = [
-        Faithfulness(llm=llm),
-        AnswerRelevancy(llm=llm, embeddings=embeddings),
-        ContextPrecision(llm=llm),
+        Faithfulness(),
+        AnswerRelevancy(),
+        ContextPrecision(),
     ]
 
     print(f"  Running RAGAS on {n} questions...")
-    result = evaluate(dataset, metrics=metrics)
+    result = evaluate(dataset, metrics=metrics, llm=llm, embeddings=embeddings)
 
     # Result keys vary slightly by version — try both naming styles
     def _get(key, alt=None):
