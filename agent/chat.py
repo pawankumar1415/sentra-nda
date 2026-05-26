@@ -372,6 +372,7 @@ def run_chat(
     return {
         "answer":     answer,
         "session_id": session_id,
+        "context":    context,
         "meta": {
             "intent":            intent,
             "projects_detected": projects,
