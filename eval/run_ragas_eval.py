@@ -67,7 +67,7 @@ def _build_llm_and_embeddings():
     if endpoint and api_key:
         from openai import AzureOpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import embedding_factory
+        from ragas.embeddings import OpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
         client = AzureOpenAI(
@@ -76,18 +76,18 @@ def _build_llm_and_embeddings():
             api_version=api_version,
         )
         llm        = llm_factory(chat_dep, client=client)
-        embeddings = embedding_factory("openai", model=emb_dep, client=client)
+        embeddings = OpenAIEmbeddings(model=emb_dep, openai_client=client)
         return llm, embeddings
 
     elif openai_key:
         from openai import OpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import embedding_factory
+        from ragas.embeddings import OpenAIEmbeddings
 
         print("  LLM: Standard OpenAI (gpt-4o)")
         client     = OpenAI(api_key=openai_key)
         llm        = llm_factory("gpt-4o", client=client)
-        embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_client=client)
         return llm, embeddings
 
     else:
@@ -103,20 +103,21 @@ def _build_llm_and_embeddings():
 
 
 def _build_ragas_dataset(records: list, backend: str):
-    from datasets import Dataset
+    """Build a RAGAS EvaluationDataset from collected records."""
+    from ragas.dataset_schema import SingleTurnSample, EvaluationDataset
 
-    rows = []
+    samples = []
     for r in records:
         b = r.get(backend)
         if not b or b.get("error") or not b.get("answer"):
             continue
-        rows.append({
-            "question":     r["question"],
-            "answer":       _strip_html(b["answer"]),
-            "contexts":     [b.get("context") or "No context retrieved"],
-            "ground_truth": r["ground_truth"],
-        })
-    return Dataset.from_list(rows), len(rows)
+        samples.append(SingleTurnSample(
+            user_input=r["question"],
+            response=_strip_html(b["answer"]),
+            retrieved_contexts=[b.get("context") or "No context retrieved"],
+            reference=r["ground_truth"],
+        ))
+    return EvaluationDataset(samples=samples), len(samples)
 
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
@@ -128,15 +129,7 @@ def run_evaluation(
     llm,
     embeddings,
 ) -> dict:
-    # Use new import path (ragas >= 0.2)
-    try:
-        from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
-    except ImportError:
-        from ragas.metrics import faithfulness as _f, answer_relevancy as _a, context_precision as _c
-        Faithfulness     = type(_f)
-        AnswerRelevancy  = type(_a)
-        ContextPrecision = type(_c)
-
+    from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
     from ragas import evaluate
 
     filtered = records
@@ -152,7 +145,6 @@ def run_evaluation(
         print(f"  No valid responses for {backend} — skipping")
         return {}
 
-    # Instantiate metrics with our LLM so RAGAS doesn't try to create OpenAI()
     metrics = [
         Faithfulness(llm=llm),
         AnswerRelevancy(llm=llm, embeddings=embeddings),
