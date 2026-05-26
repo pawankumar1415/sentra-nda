@@ -51,16 +51,19 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text or "").strip()
 
 
-def _patch_max_tokens(client):
+def _patch_for_o_series(client):
     """
-    Rename max_tokens → max_completion_tokens on every chat completion call.
-    Needed because RAGAS/instructor passes max_tokens, which o-series models reject.
+    Fix kwargs that RAGAS/instructor passes but o-series models reject:
+      - max_tokens      → max_completion_tokens
+      - temperature     → removed (o-series only accepts the default of 1)
     """
     orig = client.chat.completions.create
 
     def _create(*args, **kwargs):
         if "max_tokens" in kwargs:
             kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        if "temperature" in kwargs and kwargs["temperature"] != 1:
+            del kwargs["temperature"]
         return orig(*args, **kwargs)
 
     client.chat.completions.create = _create
@@ -84,36 +87,32 @@ def _build_llm_and_embeddings():
     if endpoint and api_key:
         from openai import AzureOpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import LangchainEmbeddingsWrapper
-        from langchain_openai import AzureOpenAIEmbeddings
+        from ragas.embeddings import embedding_factory
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        az_client = _patch_max_tokens(AzureOpenAI(
+        az_client = _patch_for_o_series(AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
         ))
-        llm = llm_factory(chat_dep, client=az_client)
-        embeddings = LangchainEmbeddingsWrapper(
-            AzureOpenAIEmbeddings(
-                azure_endpoint=endpoint,
-                api_key=api_key,
-                api_version=api_version,
-                azure_deployment=emb_dep,
-            )
+        emb_client = AzureOpenAI(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            api_version=api_version,
         )
+        llm        = llm_factory(chat_dep, client=az_client)
+        embeddings = embedding_factory(emb_dep, client=emb_client)
         return llm, embeddings
 
     elif openai_key:
+        from openai import OpenAI
         from ragas.llms import llm_factory
-        from ragas.embeddings import LangchainEmbeddingsWrapper
-        from langchain_openai import OpenAIEmbeddings as LCOpenAIEmbeddings
+        from ragas.embeddings import embedding_factory
 
         print("  LLM: Standard OpenAI (gpt-4o)")
-        llm = llm_factory("gpt-4o")
-        embeddings = LangchainEmbeddingsWrapper(
-            LCOpenAIEmbeddings(model="text-embedding-3-small", api_key=openai_key)
-        )
+        client     = OpenAI(api_key=openai_key)
+        llm        = llm_factory("gpt-4o", client=client)
+        embeddings = embedding_factory("text-embedding-3-small", client=client)
         return llm, embeddings
 
     else:
@@ -155,7 +154,7 @@ def run_evaluation(
     llm,
     embeddings,
 ) -> dict:
-    from ragas.metrics import Faithfulness, AnswerRelevancy, ContextPrecision
+    from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
     from ragas import evaluate
 
     filtered = records
