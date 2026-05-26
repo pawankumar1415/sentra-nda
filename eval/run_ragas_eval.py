@@ -52,11 +52,12 @@ def _strip_html(text: str) -> str:
 
 
 def _fix_o_series_kwargs(kwargs: dict) -> dict:
-    """Remove params that o-series models reject."""
+    """Remove params that o-series / gpt-5+ models reject."""
     if "max_tokens" in kwargs:
         kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
-    if "temperature" in kwargs and kwargs["temperature"] != 1:
-        kwargs["temperature"] = 1
+    for unsupported in ("temperature", "top_p", "presence_penalty", "frequency_penalty", "logit_bias", "logprobs"):
+        if unsupported in kwargs:
+            del kwargs[unsupported]
     return kwargs
 
 
