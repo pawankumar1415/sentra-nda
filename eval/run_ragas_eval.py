@@ -51,6 +51,22 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text or "").strip()
 
 
+def _patch_max_tokens(client):
+    """
+    Rename max_tokens → max_completion_tokens on every chat completion call.
+    Needed because RAGAS/instructor passes max_tokens, which o-series models reject.
+    """
+    orig = client.chat.completions.create
+
+    def _create(*args, **kwargs):
+        if "max_tokens" in kwargs:
+            kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+        return orig(*args, **kwargs)
+
+    client.chat.completions.create = _create
+    return client
+
+
 def _build_llm_and_embeddings():
     """
     Build RAGAS LLM and embeddings wrappers.
@@ -72,11 +88,11 @@ def _build_llm_and_embeddings():
         from langchain_openai import AzureOpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        az_client = AzureOpenAI(
+        az_client = _patch_max_tokens(AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
-        )
+        ))
         llm = llm_factory(chat_dep, client=az_client)
         embeddings = LangchainEmbeddingsWrapper(
             AzureOpenAIEmbeddings(
