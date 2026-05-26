@@ -1,0 +1,324 @@
+[
+  {
+    "id": "q_001",
+    "intent": "portfolio_summary",
+    "question": "How many projects are Red in P07?",
+    "ground_truth": "In P07, there are 4 Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P07",
+      "rag": "Red"
+    }
+  },
+  {
+    "id": "q_002",
+    "intent": "portfolio_summary",
+    "question": "Give me a summary of the portfolio status in P07.",
+    "ground_truth": "In P07, the portfolio has 17 Green, 13 Amber, and 4 Red projects. Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement. Amber projects: Box Encapsulation Plant, Box Encapsulation Plant Product Store Direct Import Facility, Chimney Decommissioning Phase 2F, Electrical Supply - New Construction, LAETP Floc Retrieval....",
+    "meta": {
+      "period": "P07"
+    }
+  },
+  {
+    "id": "q_003",
+    "intent": "portfolio_summary",
+    "question": "How many projects are Red in P08?",
+    "ground_truth": "In P08, there are 4 Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P08",
+      "rag": "Red"
+    }
+  },
+  {
+    "id": "q_004",
+    "intent": "portfolio_summary",
+    "question": "Give me a summary of the portfolio status in P08.",
+    "ground_truth": "In P08, the portfolio has 18 Green, 13 Amber, and 4 Red projects. Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement. Amber projects: Box Encapsulation Plant, Box Encapsulation Plant Product Store Direct Import Facility, Chimney Decommissioning Phase 2F, Electrical Supply - New Construction, LAETP Floc Retrieval....",
+    "meta": {
+      "period": "P08"
+    }
+  },
+  {
+    "id": "q_005",
+    "intent": "portfolio_summary",
+    "question": "How many projects are Red in P09?",
+    "ground_truth": "In P09, there are 4 Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P09",
+      "rag": "Red"
+    }
+  },
+  {
+    "id": "q_006",
+    "intent": "portfolio_summary",
+    "question": "Give me a summary of the portfolio status in P09.",
+    "ground_truth": "In P09, the portfolio has 16 Green, 13 Amber, and 4 Red projects. Red projects: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement. Amber projects: BEPPS2, Box Encapsulation Plant, Box Encapsulation Plant Product Store Direct Import Facility, Chimney Decommissioning Phase 2F, Electrical Supply - New Construction....",
+    "meta": {
+      "period": "P09"
+    }
+  },
+  {
+    "id": "q_007",
+    "intent": "portfolio_summary",
+    "question": "What is the overall health of the NDA portfolio in the latest reporting period?",
+    "ground_truth": "In the latest period (P09), there are 16 Green, 13 Amber, and 4 Red projects. Red projects include: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P09"
+    }
+  },
+  {
+    "id": "q_008",
+    "intent": "rag_filter",
+    "question": "Which projects have a Red DCA status in P07?",
+    "ground_truth": "The following projects have a Red DCA status in P07: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P07",
+      "rag": "Red"
+    }
+  },
+  {
+    "id": "q_009",
+    "intent": "rag_filter",
+    "question": "Which projects have a Amber DCA status in P08?",
+    "ground_truth": "The following projects have a Amber DCA status in P08: Box Encapsulation Plant, Box Encapsulation Plant Product Store Direct Import Facility, Chimney Decommissioning Phase 2F, Electrical Supply - New Construction, LAETP Floc Retrieval, MSSS 2nd and 3rd Extension Sub-Programme, MSSS Electrical Distribution Upgrade for Retrievals, MSSS SEP3 Rails & Brackets, PFCS Full Retrievals - Project 1, SEP Solid Waste Storage Retrievals, Sellafield Product & Residue Store Retreatment Plant, Sludge Handling & Export Plant, TR&S Replacement Cooling System.",
+    "meta": {
+      "period": "P08",
+      "rag": "Amber"
+    }
+  },
+  {
+    "id": "q_010",
+    "intent": "rag_filter",
+    "question": "Which projects have a Red DCA status in P09?",
+    "ground_truth": "The following projects have a Red DCA status in P09: Calder Land Clearance, Data Centre Replacement Project, Enhanced CNC Airwave System (Encrypted Comms), THORP Receipt & Storage Control Systems Replacement.",
+    "meta": {
+      "period": "P09",
+      "rag": "Red"
+    }
+  },
+  {
+    "id": "q_011",
+    "intent": "rag_filter",
+    "question": "Which projects have a Amber DCA status in P09?",
+    "ground_truth": "The following projects have a Amber DCA status in P09: BEPPS2, Box Encapsulation Plant, Box Encapsulation Plant Product Store Direct Import Facility, Chimney Decommissioning Phase 2F, Electrical Supply - New Construction, LAETP Floc Retrieval, MSSS 2nd and 3rd Extension Sub-Programme, MSSS Electrical Distribution Upgrade for Retrievals, MSSS SEP3 Rails & Brackets, SEP Solid Waste Storage Retrievals, Sellafield Product & Residue Store Retreatment Plant, Sludge Handling & Export Plant, TR&S Replacement Cooling System.",
+    "meta": {
+      "period": "P09",
+      "rag": "Amber"
+    }
+  },
+  {
+    "id": "q_012",
+    "intent": "project_query",
+    "question": "What is the RAG status of Box Encapsulation Plant in P07?",
+    "ground_truth": "In P07, Box Encapsulation Plant has a DCA RAG status of Amber.",
+    "meta": {
+      "period": "P07",
+      "project": "Box Encapsulation Plant"
+    }
+  },
+  {
+    "id": "q_013",
+    "intent": "project_query",
+    "question": "What is the DCA status of the Encrypted Communications project in P07?",
+    "ground_truth": "In P07, Enhanced CNC Airwave System (Encrypted Comms) has a DCA RAG status of Red.",
+    "meta": {
+      "period": "P07",
+      "project": "Enhanced CNC Airwave System (Encrypted Comms)"
+    }
+  },
+  {
+    "id": "q_014",
+    "intent": "project_query",
+    "question": "What is the delivery confidence assessment for BEPPS2 in P08?",
+    "ground_truth": "In P08, BEPPS2 has a DCA RAG status of Green.",
+    "meta": {
+      "period": "P08",
+      "project": "BEPPS2"
+    }
+  },
+  {
+    "id": "q_015",
+    "intent": "project_query",
+    "question": "What is the status of the Sellafield Product and Residue Store Retreatment Plant in P09?",
+    "ground_truth": "In P09, Sellafield Product & Residue Store Retreatment Plant has a DCA RAG status of Amber.",
+    "meta": {
+      "period": "P09",
+      "project": "Sellafield Product & Residue Store Retreatment Plant"
+    }
+  },
+  {
+    "id": "q_016",
+    "intent": "project_query",
+    "question": "What is the RAG status of the Data Centre Replacement Project in P09?",
+    "ground_truth": "In P09, Data Centre Replacement Project has a DCA RAG status of Red.",
+    "meta": {
+      "period": "P09",
+      "project": "Data Centre Replacement Project"
+    }
+  },
+  {
+    "id": "q_017",
+    "intent": "project_query",
+    "question": "What is the RAG status of the MSSS project in P08?",
+    "ground_truth": "In P08, MSSS 2nd and 3rd Extension Sub-Programme has a DCA RAG status of Amber.",
+    "meta": {
+      "period": "P08",
+      "project": "MSSS 2nd and 3rd Extension Sub-Programme"
+    }
+  },
+  {
+    "id": "q_018",
+    "intent": "project_query",
+    "question": "What is the DCA status of the Sellafield Security Enhancement Programme in P09?",
+    "ground_truth": "In P09, Sellafield Security Enhancement Programme (SSEP) has a DCA RAG status of Green.",
+    "meta": {
+      "period": "P09",
+      "project": "Sellafield Security Enhancement Programme (SSEP)"
+    }
+  },
+  {
+    "id": "q_019",
+    "intent": "project_query",
+    "question": "What is the Capability and Capacity RAG for Box Encapsulation Plant in P09?",
+    "ground_truth": "The Capability and Capacity RAG for Box Encapsulation Plant in P09 is Green.",
+    "meta": {
+      "period": "P09",
+      "project": "Box Encapsulation Plant",
+      "metric": "cap_rag"
+    }
+  },
+  {
+    "id": "q_020",
+    "intent": "project_query",
+    "question": "What is the Capability and Capacity RAG for BEPPS2 in P08?",
+    "ground_truth": "The Capability and Capacity RAG for BEPPS2 in P08 is Green.",
+    "meta": {
+      "period": "P08",
+      "project": "BEPPS2",
+      "metric": "cap_rag"
+    }
+  },
+  {
+    "id": "q_021",
+    "intent": "project_query",
+    "question": "Did the RAG status of Box Encapsulation Plant change between P07 and P08?",
+    "ground_truth": "The RAG status of Box Encapsulation Plant remained Amber in both P07 and P08.",
+    "meta": {
+      "project": "Box Encapsulation Plant",
+      "period_from": "P07",
+      "period_to": "P08"
+    }
+  },
+  {
+    "id": "q_022",
+    "intent": "project_query",
+    "question": "Did the RAG status of BEPPS2 change between P08 and P09?",
+    "ground_truth": "The RAG status of BEPPS2 changed from Green in P08 to Amber in P09.",
+    "meta": {
+      "project": "BEPPS2",
+      "period_from": "P08",
+      "period_to": "P09"
+    }
+  },
+  {
+    "id": "q_023",
+    "intent": "project_query",
+    "question": "What are the key challenges facing the Sellafield Product and Residue Store Retreatment Plant in P09?",
+    "ground_truth": "The Sellafield Product & Residue Store Retreatment Plant (SRP) project is a key element of the Sellafield Ltd ‘Special Nuclear Materials (SNM) Future State Programme’. The SRP is a complex major project required to provide the capability to receive special nuclear material in existing packages, from existing stores on the Sellafield site, and process the material into a form and package suitable f",
+    "meta": {
+      "period": "P09",
+      "project": "Sellafield Product & Residue Store Retreatment Plant",
+      "type": "narrative"
+    }
+  },
+  {
+    "id": "q_024",
+    "intent": "project_query",
+    "question": "What is causing delays to the Box Encapsulation Plant in P07?",
+    "ground_truth": "The BEP Project provides the Magnox Swarf Storage Silos (MSSS) Programme the capability to receive, package, inspect, and transfer Intermediate Level Waste to interim stores. At completion, BEP will enable waste retrieval at pace, to maintain an As Low as Reasonably Practicable (ALARP) position, a fundamental requirement of Sellafield Ltd site license conditions.  The first project benefit: Regula",
+    "meta": {
+      "period": "P07",
+      "project": "Box Encapsulation Plant",
+      "type": "narrative"
+    }
+  },
+  {
+    "id": "q_025",
+    "intent": "project_query",
+    "question": "What issues is BEPPS2 experiencing in P08?",
+    "ground_truth": "The Box Encapsulation Plant Product Store 2 (BEPPS2) is a critical enabler for continued high hazard retrievals from the Magnox Swarf Storage Silo (MSSS) and Pile Fuel Cladding Silo (PFCS). It will provide modern, safe and secure long term interim storage for approximately 7,500 packages of Intermediate Level Waste. The strategic requirement has been confirmed. The first project benefit is the abi",
+    "meta": {
+      "period": "P08",
+      "project": "BEPPS2",
+      "type": "narrative"
+    }
+  },
+  {
+    "id": "q_026",
+    "intent": "eac_query",
+    "question": "Which project has the largest EAC variance in the lifecycle EAC dataset?",
+    "ground_truth": "Sellafield Product & Residue Store has the largest EAC variance at £119.9m (period 2025-P11).",
+    "meta": {
+      "project": "Sellafield Product & Residue Store",
+      "period": "2025-P11"
+    }
+  },
+  {
+    "id": "q_027",
+    "intent": "eac_query",
+    "question": "What is the EAC variance for Sellafield Product & Residue Store?",
+    "ground_truth": "The EAC variance for Sellafield Product & Residue Store in 2025-P11 is £119.9m with a schedule variance of 449 days.",
+    "meta": {
+      "project": "Sellafield Product & Residue Store",
+      "period": "2025-P11"
+    }
+  },
+  {
+    "id": "q_028",
+    "intent": "eac_query",
+    "question": "What is the EAC variance for Box Encapsulation Plant Product?",
+    "ground_truth": "The EAC variance for Box Encapsulation Plant Product in 2025-P11 is £0.0m with a schedule variance of 0 days.",
+    "meta": {
+      "project": "Box Encapsulation Plant Product",
+      "period": "2025-P11"
+    }
+  },
+  {
+    "id": "q_029",
+    "intent": "eac_query",
+    "question": "What is the EAC variance for Data Centre Replacement Project?",
+    "ground_truth": "The EAC variance for Data Centre Replacement Project in 2025-P11 is £0.8m with a schedule variance of 0 days.",
+    "meta": {
+      "project": "Data Centre Replacement Project",
+      "period": "2025-P11"
+    }
+  },
+  {
+    "id": "q_030",
+    "intent": "eac_query",
+    "question": "Which project has the largest schedule slip in the EAC variance data?",
+    "ground_truth": "Sellafield Product & Residue Store has the largest schedule slip at 449 days (period 2025-P11).",
+    "meta": {
+      "project": "Sellafield Product & Residue Store"
+    }
+  },
+  {
+    "id": "q_031",
+    "intent": "eac_query",
+    "question": "Did the EAC for BEPPS2 change in P09 compared to the previous period?",
+    "ground_truth": "In P09, the EAC for BEPPS2 showed a decrease of £3.1m vs the previous period.",
+    "meta": {
+      "period": "P09",
+      "project": "BEPPS2"
+    }
+  },
+  {
+    "id": "q_032",
+    "intent": "eac_query",
+    "question": "Did the EAC for Sellafield Product & Residue Store Retreatment Plant change in P09 compared to the previous period?",
+    "ground_truth": "In P09, the EAC for Sellafield Product & Residue Store Retreatment Plant was unchanged vs the previous period.",
+    "meta": {
+      "period": "P09",
+      "project": "Sellafield Product & Residue Store Retreatment Plant"
+    }
+  }
+]

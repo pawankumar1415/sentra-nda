@@ -4,3 +4,7 @@ requests>=2.31
 python-dotenv>=1.0
 tabulate>=0.9
 python-docx>=1.1
+# RAGAS evaluation pipeline
+ragas>=0.1.9
+datasets>=2.18
+langchain-openai>=0.1.0
