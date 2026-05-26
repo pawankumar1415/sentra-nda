@@ -186,20 +186,21 @@ def run_evaluation(
 
     print(f"  Running RAGAS on {n} questions...")
 
+    # Each metric accepts only specific kwargs — derived from RAGAS 0.4.3 signatures
+    _METRIC_KWARGS = {
+        "faithfulness":      lambda s: {"user_input": s.user_input, "response": s.response, "retrieved_contexts": s.retrieved_contexts},
+        "answer_relevancy":  lambda s: {"user_input": s.user_input, "response": s.response},
+        "context_precision": lambda s: {"user_input": s.user_input, "reference": s.reference, "retrieved_contexts": s.retrieved_contexts},
+    }
+
     def _score_all():
         buckets: dict[str, list[float]] = {k: [] for k in metric_names}
         for i, sample in enumerate(dataset.samples, 1):
             print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
-            # Pass all sample fields; each metric uses only what it needs via **kwargs
-            sample_kwargs = {
-                "user_input":         sample.user_input,
-                "response":           sample.response,
-                "retrieved_contexts": sample.retrieved_contexts,
-                "reference":          sample.reference,
-            }
             for metric, name in zip(metrics, metric_names):
                 try:
-                    val = metric.score(**sample_kwargs)
+                    kwargs = _METRIC_KWARGS[name](sample)
+                    val = metric.score(**kwargs)
                     if val is not None:
                         buckets[name].append(float(val))
                 except Exception as exc:
