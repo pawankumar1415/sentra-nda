@@ -92,18 +92,18 @@ def _build_llm_and_embeddings():
     openai_key  = os.environ.get("OPENAI_API_KEY", "").strip()
 
     if endpoint and api_key:
-        from openai import AsyncAzureOpenAI, AzureOpenAI
+        from openai import AsyncAzureOpenAI
         from ragas.llms import llm_factory
         from ragas.embeddings import OpenAIEmbeddings
 
         print(f"  LLM: Azure OpenAI  deployment={chat_dep}  endpoint={endpoint[:40]}...")
-        # RAGAS 0.4.3 metric.score() calls agenerate() → requires async client
+        # RAGAS 0.4.3 metric.score() calls agenerate()/aembed_text() → async clients required
         llm_client = _patch_async(AsyncAzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
         ))
-        emb_client = AzureOpenAI(
+        emb_client = AsyncAzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
