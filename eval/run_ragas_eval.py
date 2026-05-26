@@ -183,17 +183,31 @@ def run_evaluation(
 
     print(f"  Running RAGAS on {n} questions...")
 
-    # Discover the async scoring method name for this RAGAS version
-    _SCORE_METHODS = ["ascore", "single_turn_ascore", "_single_turn_ascore"]
-    def _find_score_fn(metric):
-        for name in _SCORE_METHODS:
-            fn = getattr(metric, name, None)
-            if fn is not None and callable(fn):
-                return fn
-        raise AttributeError(
-            f"{type(metric).__name__} has none of {_SCORE_METHODS}. "
-            f"Available: {[x for x in dir(metric) if 'score' in x.lower()]}"
-        )
+    import inspect
+
+    # Map every parameter name ragas might use → the matching SingleTurnSample field
+    _FIELD_MAP = {
+        "user_input":          lambda s: s.user_input,
+        "question":            lambda s: s.user_input,
+        "response":            lambda s: s.response,
+        "answer":              lambda s: s.response,
+        "retrieved_contexts":  lambda s: s.retrieved_contexts,
+        "contexts":            lambda s: s.retrieved_contexts,
+        "reference":           lambda s: s.reference,
+        "ground_truth":        lambda s: s.reference,
+    }
+
+    def _build_kwargs(metric_obj, sample):
+        """Introspect metric.ascore signature and supply matching sample fields."""
+        fn = getattr(metric_obj, "ascore", None)
+        if fn is None:
+            raise AttributeError(f"{type(metric_obj).__name__} has no ascore method")
+        sig = inspect.signature(fn)
+        return {
+            p: _FIELD_MAP[p](sample)
+            for p in sig.parameters
+            if p in _FIELD_MAP
+        }
 
     async def _score_all():
         buckets: dict[str, list[float]] = {k: [] for k in metric_names}
@@ -201,8 +215,8 @@ def run_evaluation(
             print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
             for metric, name in zip(metrics, metric_names):
                 try:
-                    score_fn = _find_score_fn(metric)
-                    val = await score_fn(sample)
+                    kwargs = _build_kwargs(metric, sample)
+                    val = await metric.ascore(**kwargs)
                     if val is not None:
                         buckets[name].append(float(val))
                 except Exception as exc:
