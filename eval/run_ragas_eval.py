@@ -183,22 +183,31 @@ def run_evaluation(
 
     print(f"  Running RAGAS on {n} questions...")
 
+    # Discover the async scoring method name for this RAGAS version
+    _SCORE_METHODS = ["ascore", "single_turn_ascore", "_single_turn_ascore"]
+    def _find_score_fn(metric):
+        for name in _SCORE_METHODS:
+            fn = getattr(metric, name, None)
+            if fn is not None and callable(fn):
+                return fn
+        raise AttributeError(
+            f"{type(metric).__name__} has none of {_SCORE_METHODS}. "
+            f"Available: {[x for x in dir(metric) if 'score' in x.lower()]}"
+        )
+
     async def _score_all():
         buckets: dict[str, list[float]] = {k: [] for k in metric_names}
         for i, sample in enumerate(dataset.samples, 1):
             print(f"    [{i:02d}/{n}] scoring...", end="\r", flush=True)
             for metric, name in zip(metrics, metric_names):
                 try:
-                    val = await metric.single_turn_ascore(sample)
-                    if i == 1:
-                        print(f"\n  DEBUG [{name}] first sample → {val!r} (type={type(val).__name__})")
+                    score_fn = _find_score_fn(metric)
+                    val = await score_fn(sample)
                     if val is not None:
                         buckets[name].append(float(val))
-                    else:
-                        if i <= 3:
-                            print(f"\n  WARN [{name}] sample {i}: returned None")
                 except Exception as exc:
-                    print(f"\n  ERROR [{name}] sample {i}: {type(exc).__name__}: {exc}")
+                    if i == 1:
+                        print(f"\n  ERROR [{name}] sample {i}: {type(exc).__name__}: {exc}")
         print()
         return buckets
 
