@@ -1342,4 +1342,8 @@ def chat_pgvector(question: str, session_id: Optional[str] = None) -> Dict:
     from chat import run_chat as _agent_chat
 
     enriched_question = f"[PGVECTOR CONTEXT]\n{context}\n\n[USER QUESTION]\n{question}"
-    return _agent_chat(question=enriched_question, session_id=session_id)
+    result = _agent_chat(question=enriched_question, session_id=session_id)
+    # Override context with the pgvector-sourced context — this is the data the
+    # answer was actually grounded in, and what RAGAS needs for faithfulness scoring.
+    result["context"] = context
+    return result
