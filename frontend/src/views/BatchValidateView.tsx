@@ -476,6 +476,7 @@ const BatchValidateView = () => {
                                         </thead>
                                         <tbody>
                                             {results.map((res: any, idx: number) => {
+                                                const verdictLabel = (v: string) => v === 'PASS' ? 'Green' : v === 'PASS_WITH_WARNINGS' ? 'Amber' : v === 'FAIL' ? 'Red' : v;
                                                 const displayVerdict = res.overall_verdict;
                                                 const vColor         = getVerdictColor(displayVerdict);
                                                 const isExpanded     = expandedRow === res.project_name;
@@ -507,7 +508,7 @@ const BatchValidateView = () => {
                                                                     fontWeight: 'bold', fontSize: '0.85rem'
                                                                 }}>
                                                                     {getVerdictIcon(displayVerdict)}
-                                                                    {displayVerdict}
+                                                                    {verdictLabel(displayVerdict)}
                                                                 </div>
                                                             </td>
                                                             <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>

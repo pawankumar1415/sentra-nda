@@ -88,9 +88,9 @@ const AnalyticsView = () => {
 
     const cards = [
         { label: 'TOTAL PROJECTS', value: total,           sub: 'narratives',            color: 'var(--text-primary)'  },
-        { label: 'PASS',           value: passCount,        sub: 'score ≥ 8',             color: 'var(--status-pass)'   },
-        { label: 'WARNINGS',       value: warnCount,        sub: 'score 6–7',             color: 'var(--status-warn)'   },
-        { label: 'FAIL',           value: failCount,        sub: 'score < 6',             color: 'var(--status-fail)'   },
+        { label: 'GREEN',          value: passCount,        sub: 'score ≥ 9',             color: 'var(--status-pass)'   },
+        { label: 'AMBER',          value: warnCount,        sub: 'score 7–8',             color: 'var(--status-warn)'   },
+        { label: 'RED',            value: failCount,        sub: 'score < 7',             color: 'var(--status-fail)'   },
         { label: 'INDIVIDUAL',     value: individualCount,  sub: 'single validations',    color: 'var(--accent-blue)'   },
         { label: 'BATCH',          value: batchCount,       sub: 'batch project entries', color: 'var(--text-secondary)'},
     ];
@@ -201,9 +201,9 @@ const AnalyticsView = () => {
                             style={{ fontSize: '0.82rem', padding: '5px 10px', background: 'var(--bg-primary)', width: 'auto' }}
                         >
                             <option value="ALL">All verdicts</option>
-                            <option value="PASS">Pass only</option>
-                            <option value="WARN">Warn only</option>
-                            <option value="FAIL">Fail only</option>
+                            <option value="PASS">Green only</option>
+                            <option value="WARN">Amber only</option>
+                            <option value="FAIL">Red only</option>
                             <option value="ERROR">Error only</option>
                         </select>
                         {/* Sort toggle */}
@@ -286,7 +286,7 @@ const AnalyticsView = () => {
                                                             color: verdictColor(entry.verdict),
                                                         }}>
                                                             {verdictIcon(entry.verdict)}
-                                                            {entry.verdict}
+                                                            {entry.verdict === 'PASS' ? 'Green' : entry.verdict === 'WARN' ? 'Amber' : entry.verdict === 'FAIL' ? 'Red' : entry.verdict}
                                                         </span>
                                                     </td>
                                                     {/* Score */}
