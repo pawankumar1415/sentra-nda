@@ -21,7 +21,7 @@ const AnalyticsView = () => {
 
     const total           = history.length;
     const passCount       = history.filter(e => e.verdict === 'PASS').length;
-    const warnCount       = history.filter(e => e.verdict === 'WARN').length;
+    const warnCount       = history.filter(e => e.verdict === 'WARN' || (e.verdict as string) === 'PASS_WITH_WARNINGS').length;
     const failCount       = history.filter(e => e.verdict === 'FAIL').length;
     const individualCount = history.filter(e => e.type === 'individual').length;
     const batchCount      = history.filter(e => e.type === 'batch').length;
@@ -49,14 +49,14 @@ const AnalyticsView = () => {
         if (v === 'PASS')  return 'var(--status-pass)';
         if (v === 'FAIL')  return 'var(--status-fail)';
         if (v === 'ERROR') return 'var(--status-fail)';
-        return 'var(--status-warn)';
+        return 'var(--status-warn)'; // WARN + PASS_WITH_WARNINGS
     };
 
     const verdictBg = (v: string) => {
         if (v === 'PASS')  return 'var(--status-pass-bg)';
         if (v === 'FAIL')  return 'var(--status-fail-bg)';
         if (v === 'ERROR') return 'var(--status-fail-bg)';
-        return 'var(--status-warn-bg)';
+        return 'var(--status-warn-bg)'; // WARN + PASS_WITH_WARNINGS
     };
 
     const verdictIcon = (v: string) => {
@@ -286,7 +286,7 @@ const AnalyticsView = () => {
                                                             color: verdictColor(entry.verdict),
                                                         }}>
                                                             {verdictIcon(entry.verdict)}
-                                                            {entry.verdict === 'PASS' ? 'Green' : entry.verdict === 'WARN' ? 'Amber' : entry.verdict === 'FAIL' ? 'Red' : entry.verdict}
+                                                            {entry.verdict === 'PASS' ? 'Green' : (entry.verdict === 'WARN' || (entry.verdict as string) === 'PASS_WITH_WARNINGS') ? 'Amber' : entry.verdict === 'FAIL' ? 'Red' : entry.verdict}
                                                         </span>
                                                     </td>
                                                     {/* Score */}

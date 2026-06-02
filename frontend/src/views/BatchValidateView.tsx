@@ -156,7 +156,7 @@ const BatchValidateView = () => {
                     type:                 'batch' as const,
                     project_name:         res.project_name,
                     period:               resolvedPeriod,
-                    verdict:              (res.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
+                    verdict:              (res.overall_verdict === 'PASS_WITH_WARNINGS' ? 'WARN' : res.overall_verdict || 'ERROR') as 'PASS' | 'WARN' | 'FAIL' | 'ERROR',
                     score:                res.layer1?.compliance_score ?? null,
                     batch_id:             batchId,
                     narrative:            res._narrative ?? undefined,
