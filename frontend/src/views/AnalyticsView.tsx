@@ -163,15 +163,15 @@ const AnalyticsView = () => {
                     <div style={{ display: 'flex', gap: '20px', fontSize: '0.82rem' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--status-pass)', display: 'inline-block' }} />
-                            Pass {passRate}%
+                            Green {passRate}%
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--status-warn)', display: 'inline-block' }} />
-                            Warn {warnRate}%
+                            Amber {warnRate}%
                         </span>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--status-fail)', display: 'inline-block' }} />
-                            Fail {failRate}%
+                            Red {failRate}%
                         </span>
                     </div>
                 </div>

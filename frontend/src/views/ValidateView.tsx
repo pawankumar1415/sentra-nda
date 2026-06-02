@@ -495,7 +495,7 @@ const ValidateView = () => {
                         <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right', marginBottom: '-12px' }}>
-                                Thresholds: 8-10 (Pass) &bull; 6-7 (Pass with Warning) &bull; &lt; 6 (Fail)
+                                Thresholds: 9-10 (Green) &bull; 7-8 (Amber) &bull; &lt; 7 (Red)
                             </div>
                             {/* Verdict Header */}
                             <div className="card" style={{
@@ -509,7 +509,7 @@ const ValidateView = () => {
                                     <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '1px' }}>Overall Verdict</h3>
                                     <div style={{ fontSize: '1.8rem', fontWeight: '700', color: getVerdictColor(result.overall_verdict), display: 'flex', gap: '12px', alignItems: 'center' }}>
                                         {result.overall_verdict === 'PASS' ? <CheckCircle2 size={32} /> : result.overall_verdict === 'FAIL' ? <XCircle size={32} /> : <AlertTriangle size={32} />}
-                                        {result.overall_verdict.replace('_', ' ')}
+                                        {result.overall_verdict === 'PASS' ? 'Green' : result.overall_verdict === 'PASS_WITH_WARNINGS' ? 'Amber' : result.overall_verdict === 'FAIL' ? 'Red' : result.overall_verdict}
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
