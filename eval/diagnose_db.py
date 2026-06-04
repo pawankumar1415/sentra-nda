@@ -98,8 +98,9 @@ def _connect():
         print("  in eval/.env or export them as environment variables.")
         sys.exit(1)
 
-    # Azure AD token auth (when user contains '@' — az login on local, Managed Identity on Azure)
-    if "@" in user and not password:
+    # Azure AD token auth — always required when user is an AAD account (contains '@').
+    # The POSTGRES_PASSWORD in .env is ignored for AAD users; a fresh token is fetched instead.
+    if "@" in user:
         try:
             from azure.identity import AzureCliCredential
             token = AzureCliCredential().get_token(
@@ -108,7 +109,9 @@ def _connect():
             password = token.token
             print("  Using Azure AD token (AzureCliCredential) for PostgreSQL auth.")
         except Exception as e:
-            print(f"  WARN: Azure AD token failed: {e}. Trying without password.")
+            print(f"  ERROR: Could not obtain Azure AD token: {e}")
+            print("  Run 'az login' and retry.")
+            sys.exit(1)
 
     import psycopg2
     return psycopg2.connect(
