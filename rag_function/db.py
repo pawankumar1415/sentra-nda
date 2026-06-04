@@ -185,17 +185,22 @@ ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users
 --         (P50 comes from Excel column headers; UNKNOWN from failed detection).
 DELETE FROM nda_projects WHERE period_short_name IN ('UNKNOWN', 'P50');
 
--- Step 2: Deduplicate rows sharing the same project_id — keep the most recently
---         indexed row for each project_id (uses ctid which is always unique).
+-- Step 2: Deduplicate by business key (project_name, period_short_name).
+--         Keep the most recently indexed row; delete all older duplicates.
+--         This covers both same-project_id duplicates and cases where the
+--         same project was ingested with slightly different project_id values.
 DELETE FROM nda_projects a
 USING (
-    SELECT project_id, MAX(ctid) AS keep_ctid
+    SELECT DISTINCT ON (project_name, period_short_name)
+           ctid            AS keep_ctid,
+           project_name,
+           period_short_name
     FROM   nda_projects
-    GROUP  BY project_id
-    HAVING COUNT(*) > 1
-) dups
-WHERE a.project_id = dups.project_id
-  AND a.ctid != dups.keep_ctid;
+    ORDER  BY project_name, period_short_name, indexed_at DESC NULLS LAST
+) keeper
+WHERE a.project_name       = keeper.project_name
+  AND a.period_short_name  = keeper.period_short_name
+  AND a.ctid              != keeper.keep_ctid;
 
 -- Step 3: Enforce PRIMARY KEY on project_id if it is missing from the live table
 --         (CREATE TABLE IF NOT EXISTS never alters an existing table, so old

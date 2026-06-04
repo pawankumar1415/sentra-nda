@@ -430,8 +430,7 @@ def ingest_mppr_pgvector(file_bytes: bytes, filename: str = "", user_id: str = "
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s
         )
-        ON CONFLICT (project_name, period_short_name) DO UPDATE SET
-            project_id              = EXCLUDED.project_id,
+        ON CONFLICT (project_id) DO UPDATE SET
             rag_status              = EXCLUDED.rag_status,
             dca_rag_status          = EXCLUDED.dca_rag_status,
             capability_capacity_rag = EXCLUDED.capability_capacity_rag,
