@@ -234,3 +234,4 @@ eval/metrics_*.json
 eval/report_*.md
 eval/.env
 eval/ragas_*.json
+eval/db*.json
