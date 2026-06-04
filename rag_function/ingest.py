@@ -57,7 +57,7 @@ def _safe_int(value: Any, default: int = 0) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 # Period extraction helpers
 # ─────────────────────────────────────────────────────────────────────────────
-_PERIOD_RE = re.compile(r"\b(P\d{2})\b", re.IGNORECASE)
+_PERIOD_RE = re.compile(r"\b(P0[1-9]|P1[0-3])\b", re.IGNORECASE)
 
 
 def _extract_period_from_filename(filename: str) -> str:
@@ -202,6 +202,26 @@ def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]
         })
 
     logger.info("Parsed %d projects from '%s'", len(projects), sheet_name)
+
+    # Supplement with '1) Report' sheet to capture projects absent from the curated MPPR sheet.
+    # The MPPR data takes precedence — Report-only projects are appended with RAG + narrative.
+    report_sheet = next((s for s in xl.sheet_names if s.strip() == "1) Report"), None)
+    if report_sheet:
+        try:
+            df_report       = pd.read_excel(xl, sheet_name=report_sheet, header=None)
+            report_projects = _parse_report_sheet(df_report, period)
+            mppr_names      = {p["project_name"] for p in projects}
+            added           = 0
+            for rp in report_projects:
+                if rp["project_name"] not in mppr_names:
+                    projects.append(rp)
+                    added += 1
+            if added:
+                logger.info("Added %d additional projects from '1) Report' sheet", added)
+        except Exception as exc:
+            logger.warning("Could not parse '1) Report' sheet, skipping: %s", exc)
+
+    logger.info("Total projects parsed (all sheets): %d", len(projects))
     return period, projects
 
 
@@ -227,6 +247,79 @@ def list_projects_from_bytes(file_bytes: bytes, filename: str = "") -> Dict:
     except Exception as e:
         logger.exception("Failed to list projects from bytes: %s", e)
         raise
+
+# ─────────────────────────────────────────────────────────────────────────────
+# '1) Report' sheet parser — full portfolio (different column layout)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _parse_report_sheet(df: "pd.DataFrame", period: str) -> List[Dict]:
+    """
+    Parse the '1) Report' sheet which contains the complete NDA portfolio.
+
+    Column layout differs from '5a)NDA MPPR':
+      Header row : col0=blank, col1=project_number ('35/XXXXX'),
+                   col2=project_name, col5=DCA RAG letter
+      Narrative  : col0=project_name, col1=narrative_text
+
+    EAC/schedule numerics default to 0 — the nda_eac_variance table is the
+    authoritative source for those values for Report-only projects.
+    """
+    projects: List[Dict] = []
+
+    for i in range(len(df)):
+        row = df.iloc[i]
+        col0 = _safe(row.iloc[0]) if len(row) > 0 else ""
+        col1 = _safe(row.iloc[1]) if len(row) > 1 else ""
+        col2 = _safe(row.iloc[2]) if len(row) > 2 else ""
+        col5 = _safe(row.iloc[5]) if len(row) > 5 else ""
+
+        if "Table of Changes" in col1 or "Table of Changes" in col2:
+            break
+
+        is_data_row = (
+            col0 == ""
+            and col2 != "" and len(col2) >= 3
+            and col5.lower() in _RAG_VALUES
+        )
+        if not is_data_row:
+            continue
+
+        project_name = col2
+        dca_rag      = col5.upper()
+
+        narrative_text = ""
+        for j in range(i + 1, min(i + 4, len(df))):
+            nrow = df.iloc[j]
+            nc0  = _safe(nrow.iloc[0]) if len(nrow) > 0 else ""
+            nc1  = _safe(nrow.iloc[1]) if len(nrow) > 1 else ""
+            if nc0 and nc1 and len(nc1) > 40:
+                narrative_text = nc1
+                break
+
+        raw_text = (
+            f"Project: {project_name} | "
+            f"DCA RAG: {dca_rag} | "
+            f"EAC (£m): 0.000 | "
+            f"EAC Variance (£m): 0.000 | "
+            f"Schedule Variance (days): 0 | "
+            f"Narrative: {narrative_text}"
+        )
+        projects.append({
+            "project_id":              f"{period}|{project_name}",
+            "project_name":            project_name,
+            "period_short_name":       period,
+            "rag_status":              dca_rag,
+            "dca_rag_status":          dca_rag,
+            "capability_capacity_rag": "",
+            "eac_total":               0.0,
+            "eac_variance":            0.0,
+            "schedule_variance_days":  0,
+            "narrative_text":          narrative_text,
+            "raw_content":             raw_text,
+        })
+
+    return projects
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Ingest pipeline
@@ -268,8 +361,8 @@ def run_ingest(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s
         )
-        ON CONFLICT (project_id) DO UPDATE SET
-            project_name            = EXCLUDED.project_name,
+        ON CONFLICT (project_name, period_short_name) DO UPDATE SET
+            project_id              = EXCLUDED.project_id,
             rag_status              = EXCLUDED.rag_status,
             dca_rag_status          = EXCLUDED.dca_rag_status,
             capability_capacity_rag = EXCLUDED.capability_capacity_rag,

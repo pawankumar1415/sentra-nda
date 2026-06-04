@@ -180,6 +180,55 @@ _MIGRATION_SQL = """
 ALTER TABLE nda_projects  ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
+-- ── Duplicate prevention for nda_projects ─────────────────────────────────────
+-- Step 1: Remove rows with junk period values produced by bad period detection
+--         (P50 comes from Excel column headers; UNKNOWN from failed detection).
+DELETE FROM nda_projects WHERE period_short_name IN ('UNKNOWN', 'P50');
+
+-- Step 2: Deduplicate rows sharing the same project_id — keep the most recently
+--         indexed row for each project_id (uses ctid which is always unique).
+DELETE FROM nda_projects a
+USING (
+    SELECT project_id, MAX(ctid) AS keep_ctid
+    FROM   nda_projects
+    GROUP  BY project_id
+    HAVING COUNT(*) > 1
+) dups
+WHERE a.project_id = dups.project_id
+  AND a.ctid != dups.keep_ctid;
+
+-- Step 3: Enforce PRIMARY KEY on project_id if it is missing from the live table
+--         (CREATE TABLE IF NOT EXISTS never alters an existing table, so old
+--          deployments may be missing this constraint).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE  table_name = 'nda_projects' AND constraint_type = 'PRIMARY KEY'
+    ) THEN
+        ALTER TABLE nda_projects ADD PRIMARY KEY (project_id);
+    END IF;
+END $$;
+
+-- Step 4: Add a business-key UNIQUE constraint on (project_name, period_short_name).
+--         This is the real duplicate guard: even if project_id differs slightly
+--         between two ingest runs, PostgreSQL will reject a second row for the
+--         same project in the same period.  The upsert ON CONFLICT clause in
+--         ingest.py targets project_id, so the ingest must be re-run after this
+--         migration; from that point forward every ingest is idempotent.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE  table_name = 'nda_projects'
+          AND  constraint_name = 'uq_nda_projects_name_period'
+    ) THEN
+        ALTER TABLE nda_projects
+            ADD CONSTRAINT uq_nda_projects_name_period
+            UNIQUE (project_name, period_short_name);
+    END IF;
+END $$;
+
 -- nda_eac_variance: migrate to shared data model.
 -- Drop the old (project_name, user_id) composite PK and replace with project_name only
 -- so all users share the same EAC dataset.

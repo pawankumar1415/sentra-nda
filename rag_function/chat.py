@@ -35,6 +35,8 @@ from conversation import create_session, load_history, save_turn, session_exists
 
 _PERIOD_RE = re.compile(r'\bP\d{2}\b', re.IGNORECASE)
 _RAG_COLOR_RE = re.compile(r'\b(red|amber|green)\b', re.IGNORECASE)
+# Maps full colour words (from user questions) to single-letter codes stored in DB
+_RAG_COLOR_MAP = {"red": "R", "amber": "A", "green": "G"}
 
 logger = logging.getLogger(__name__)
 
@@ -88,23 +90,27 @@ def _get_portfolio_summary(period: Optional[str] = None) -> str:
     """Fetches high-level metadata for all projects, optionally filtered by period."""
     if period:
         sql = """
-            SELECT project_name, dca_rag_status, capability_capacity_rag,
+            SELECT DISTINCT ON (project_name)
+                   project_name, dca_rag_status, capability_capacity_rag,
                    eac_variance, schedule_variance_days, period_short_name
             FROM nda_projects
             WHERE period_short_name ILIKE %s
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
         params: tuple = (f"%{period}%",)
         label = f"PORTFOLIO DATA (Period: {period.upper()}):\n"
     else:
         sql = """
-            SELECT project_name, dca_rag_status, capability_capacity_rag,
+            SELECT DISTINCT ON (project_name)
+                   project_name, dca_rag_status, capability_capacity_rag,
                    eac_variance, schedule_variance_days, period_short_name
             FROM nda_projects
             WHERE period_short_name = (
-                SELECT period_short_name FROM nda_projects ORDER BY period_short_name DESC LIMIT 1
+                SELECT period_short_name FROM nda_projects
+                WHERE period_short_name NOT IN ('UNKNOWN', 'P50')
+                ORDER BY period_short_name DESC LIMIT 1
             )
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
         params = ()
         label = "LATEST PORTFOLIO DATA:\n"
@@ -128,30 +134,35 @@ def _get_portfolio_summary(period: Optional[str] = None) -> str:
 
 def _get_status_filtered_context(rag_status: str, period: Optional[str] = None) -> str:
     """Direct query for projects matching a RAG colour, optionally filtered by period."""
+    # Map full colour word from user question to single-letter code stored in DB
+    rag_letter = _RAG_COLOR_MAP.get(rag_status.lower(), rag_status.upper())
     if period:
         sql = """
-            SELECT project_name, period_short_name, dca_rag_status,
+            SELECT DISTINCT ON (project_name)
+                   project_name, period_short_name, dca_rag_status,
                    capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
             FROM nda_projects
-            WHERE dca_rag_status ILIKE %s
+            WHERE dca_rag_status = %s
               AND period_short_name ILIKE %s
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
-        params: tuple = (f"%{rag_status}%", f"%{period}%")
+        params: tuple = (rag_letter, f"%{period}%")
         label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS IN PERIOD {period.upper()}:\n"
     else:
         sql = """
-            SELECT project_name, period_short_name, dca_rag_status,
+            SELECT DISTINCT ON (project_name)
+                   project_name, period_short_name, dca_rag_status,
                    capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
             FROM nda_projects
-            WHERE dca_rag_status ILIKE %s
+            WHERE dca_rag_status = %s
               AND period_short_name = (
                   SELECT period_short_name FROM nda_projects
+                  WHERE period_short_name NOT IN ('UNKNOWN', 'P50')
                   ORDER BY period_short_name DESC LIMIT 1
               )
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
-        params = (f"%{rag_status}%",)
+        params = (rag_letter,)
         label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS (LATEST PERIOD):\n"
 
     context = label
