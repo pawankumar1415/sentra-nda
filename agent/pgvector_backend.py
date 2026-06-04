@@ -32,7 +32,7 @@ _embedding_client: Optional[AzureOpenAI] = None
 _chat_client: Optional[AzureOpenAI] = None
 
 _EMBEDDING_DIMS = int(os.environ.get("AZURE_OPENAI_EMBEDDING_DIMS", "3072"))
-_PERIOD_RE = re.compile(r"\b(P\d{2})\b", re.IGNORECASE)
+_PERIOD_RE = re.compile(r"\b(P0[1-9]|P1[0-3])\b", re.IGNORECASE)
 _RAG_VALUES = {"r", "a", "g", "-", "n/a", "tbd"}
 
 
@@ -311,6 +311,24 @@ def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]
             "raw_content": raw_content,
         })
 
+    # Supplement with '1) Report' sheet for projects absent from the curated MPPR sheet.
+    report_sheet = next((s for s in xl.sheet_names if s.strip() == "1) Report"), None)
+    if report_sheet:
+        try:
+            df_report       = pd.read_excel(xl, sheet_name=report_sheet, header=None)
+            report_projects = _parse_report_sheet(df_report, period)
+            mppr_names      = {p["project_name"] for p in projects}
+            added           = 0
+            for rp in report_projects:
+                if rp["project_name"] not in mppr_names:
+                    projects.append(rp)
+                    added += 1
+            if added:
+                logger.info("Added %d additional projects from '1) Report' sheet", added)
+        except Exception as exc:
+            logger.warning("Could not parse '1) Report' sheet, skipping: %s", exc)
+
+    logger.info("Total projects parsed (all sheets): %d", len(projects))
     return period, projects
 
 
@@ -323,6 +341,72 @@ def list_projects_from_bytes(file_bytes: bytes, filename: str = "") -> Dict:
             for p in projects
         ],
     }
+
+
+def _parse_report_sheet(df: pd.DataFrame, period: str) -> List[Dict]:
+    """
+    Parse the '1) Report' sheet which contains the complete NDA portfolio.
+
+    Column layout differs from '5a)NDA MPPR':
+      Header row : col0=blank, col1=project_number ('35/XXXXX'),
+                   col2=project_name, col5=DCA RAG letter
+      Narrative  : col0=project_name, col1=narrative_text
+
+    EAC/schedule numerics default to 0 — the nda_eac_variance table is the
+    authoritative source for those values for Report-only projects.
+    """
+    projects: List[Dict] = []
+
+    for i in range(len(df)):
+        row  = df.iloc[i]
+        col0 = _safe(row.iloc[0]) if len(row) > 0 else ""
+        col1 = _safe(row.iloc[1]) if len(row) > 1 else ""
+        col2 = _safe(row.iloc[2]) if len(row) > 2 else ""
+        col5 = _safe(row.iloc[5]) if len(row) > 5 else ""
+
+        if "Table of Changes" in col1 or "Table of Changes" in col2:
+            break
+
+        is_data_row = (
+            col0 == ""
+            and col2 != "" and len(col2) >= 3
+            and col5.lower() in _RAG_VALUES
+        )
+        if not is_data_row:
+            continue
+
+        project_name = col2
+        dca_rag      = col5.upper()
+
+        narrative_text = ""
+        for j in range(i + 1, min(i + 4, len(df))):
+            nrow = df.iloc[j]
+            nc0  = _safe(nrow.iloc[0]) if len(nrow) > 0 else ""
+            nc1  = _safe(nrow.iloc[1]) if len(nrow) > 1 else ""
+            if nc0 and nc1 and len(nc1) > 40:
+                narrative_text = nc1
+                break
+
+        raw_text = (
+            f"Project: {project_name} | DCA RAG: {dca_rag} | "
+            f"EAC (GBP m): 0.000 | EAC Variance (GBP m): 0.000 | "
+            f"Schedule Variance (days): 0 | Narrative: {narrative_text}"
+        )
+        projects.append({
+            "project_id":              f"{period}|{project_name}",
+            "project_name":            project_name,
+            "period_short_name":       period,
+            "rag_status":              dca_rag,
+            "dca_rag_status":          dca_rag,
+            "capability_capacity_rag": "",
+            "eac_total":               0.0,
+            "eac_variance":            0.0,
+            "schedule_variance_days":  0,
+            "narrative_text":          narrative_text,
+            "raw_content":             raw_text,
+        })
+
+    return projects
 
 
 def ingest_mppr_pgvector(file_bytes: bytes, filename: str = "", user_id: str = "") -> Dict:
@@ -346,9 +430,8 @@ def ingest_mppr_pgvector(file_bytes: bytes, filename: str = "", user_id: str = "
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s
         )
-        ON CONFLICT (project_id) DO UPDATE SET
-            project_name            = EXCLUDED.project_name,
-            period_short_name       = EXCLUDED.period_short_name,
+        ON CONFLICT (project_name, period_short_name) DO UPDATE SET
+            project_id              = EXCLUDED.project_id,
             rag_status              = EXCLUDED.rag_status,
             dca_rag_status          = EXCLUDED.dca_rag_status,
             capability_capacity_rag = EXCLUDED.capability_capacity_rag,
@@ -1114,29 +1197,34 @@ def _detect_intent(question: str) -> Dict[str, Any]:
 
 
 _RAG_COLOR_RE = re.compile(r'\b(red|amber|green)\b', re.IGNORECASE)
+# Maps full colour words (from user questions) to single-letter codes stored in DB
+_RAG_COLOR_MAP = {"red": "R", "amber": "A", "green": "G"}
 
 
 def _get_portfolio_summary(period: Optional[str] = None) -> str:
     if period:
         sql = """
-            SELECT project_name, dca_rag_status, capability_capacity_rag,
+            SELECT DISTINCT ON (project_name)
+                   project_name, dca_rag_status, capability_capacity_rag,
                    eac_variance, schedule_variance_days, period_short_name
             FROM nda_projects
             WHERE period_short_name ILIKE %s
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
         params: tuple = (f"%{period}%",)
         label = f"PORTFOLIO DATA (Period: {period.upper()}):\n"
     else:
         sql = """
-            SELECT project_name, dca_rag_status, capability_capacity_rag,
+            SELECT DISTINCT ON (project_name)
+                   project_name, dca_rag_status, capability_capacity_rag,
                    eac_variance, schedule_variance_days, period_short_name
             FROM nda_projects
             WHERE period_short_name = (
                 SELECT period_short_name FROM nda_projects
+                WHERE period_short_name NOT IN ('UNKNOWN', 'P50')
                 ORDER BY period_short_name DESC LIMIT 1
             )
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
         params = ()
         label = "LATEST PORTFOLIO DATA:\n"
@@ -1160,30 +1248,35 @@ def _get_portfolio_summary(period: Optional[str] = None) -> str:
 
 def _get_status_filtered_context(rag_status: str, period: Optional[str] = None) -> str:
     """Direct query for projects matching a RAG colour, optionally filtered by period."""
+    # Map full colour word from user question to single-letter code stored in DB
+    rag_letter = _RAG_COLOR_MAP.get(rag_status.lower(), rag_status.upper())
     if period:
         sql = """
-            SELECT project_name, period_short_name, dca_rag_status,
+            SELECT DISTINCT ON (project_name)
+                   project_name, period_short_name, dca_rag_status,
                    capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
             FROM nda_projects
-            WHERE dca_rag_status ILIKE %s
+            WHERE dca_rag_status = %s
               AND period_short_name ILIKE %s
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
-        params: tuple = (f"%{rag_status}%", f"%{period}%")
+        params: tuple = (rag_letter, f"%{period}%")
         label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS IN PERIOD {period.upper()}:\n"
     else:
         sql = """
-            SELECT project_name, period_short_name, dca_rag_status,
+            SELECT DISTINCT ON (project_name)
+                   project_name, period_short_name, dca_rag_status,
                    capability_capacity_rag, eac_variance, schedule_variance_days, narrative_text
             FROM nda_projects
-            WHERE dca_rag_status ILIKE %s
+            WHERE dca_rag_status = %s
               AND period_short_name = (
                   SELECT period_short_name FROM nda_projects
+                  WHERE period_short_name NOT IN ('UNKNOWN', 'P50')
                   ORDER BY period_short_name DESC LIMIT 1
               )
-            ORDER BY project_name
+            ORDER BY project_name, indexed_at DESC
         """
-        params = (f"%{rag_status}%",)
+        params = (rag_letter,)
         label = f"PROJECTS WITH {rag_status.upper()} RAG STATUS (LATEST PERIOD):\n"
 
     context = label
