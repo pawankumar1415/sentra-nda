@@ -39,7 +39,7 @@ import json
 import os
 import pathlib
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -98,15 +98,15 @@ def _connect():
         print("  in eval/.env or export them as environment variables.")
         sys.exit(1)
 
-    # Azure AD token auth (when user contains '@' — Managed Identity / az login)
+    # Azure AD token auth (when user contains '@' — az login on local, Managed Identity on Azure)
     if "@" in user and not password:
         try:
-            from azure.identity import DefaultAzureCredential
-            token = DefaultAzureCredential().get_token(
+            from azure.identity import AzureCliCredential
+            token = AzureCliCredential().get_token(
                 "https://ossrdbms-aad.database.windows.net/.default"
             )
             password = token.token
-            print("  Using Azure AD token for PostgreSQL auth.")
+            print("  Using Azure AD token (AzureCliCredential) for PostgreSQL auth.")
         except Exception as e:
             print(f"  WARN: Azure AD token failed: {e}. Trying without password.")
 
@@ -525,7 +525,7 @@ def main() -> None:
     _load_env(args.env)
 
     report = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "postgresql":   {},
         "azure_search": {},
     }
