@@ -847,7 +847,7 @@ NARRATIVE TO VALIDATE:
         score = result.get("layer1", {}).get("compliance_score", 0)
         if score == 10:
             result["overall_verdict"] = "PASS"
-        elif score >= 7:
+        elif score >= 8:
             result["overall_verdict"] = "PASS_WITH_WARNINGS"
         else:
             result["overall_verdict"] = "FAIL"
@@ -992,7 +992,7 @@ def pa_batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
                 score = l1.get("compliance_score")
                 vraw  = parsed.get("overall_verdict", "")
                 verdict = vraw if vraw in ("PASS", "PASS_WITH_WARNINGS", "WARN", "FAIL") \
-                          else ("PASS" if (score or 0) == 10 else ("WARN" if (score or 0) >= 7 else "FAIL"))
+                          else ("PASS" if (score or 0) == 10 else ("WARN" if (score or 0) >= 8 else "FAIL"))
                 layer1_issues = _ascii_safe(_join_issues(l1.get("issues", [])))
                 layer2_issues = _ascii_safe(_join_issues(l2.get("issues", [])))
                 rewritten     = _ascii_safe(parsed.get("rewritten_narrative", ""))

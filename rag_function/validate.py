@@ -324,7 +324,7 @@ def run_validate(
         score = result.get("layer1", {}).get("compliance_score", 0)
         if score == 10:
             result["overall_verdict"] = "PASS"
-        elif score >= 7:
+        elif score >= 8:
             result["overall_verdict"] = "PASS_WITH_WARNINGS"
         else:
             result["overall_verdict"] = "FAIL"
