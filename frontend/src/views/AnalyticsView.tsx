@@ -88,8 +88,8 @@ const AnalyticsView = () => {
 
     const cards = [
         { label: 'TOTAL PROJECTS', value: total,           sub: 'narratives',            color: 'var(--text-primary)'  },
-        { label: 'GREEN',          value: passCount,        sub: 'score ≥ 9',             color: 'var(--status-pass)'   },
-        { label: 'AMBER',          value: warnCount,        sub: 'score 7–8',             color: 'var(--status-warn)'   },
+        { label: 'GREEN',          value: passCount,        sub: 'score = 10',            color: 'var(--status-pass)'   },
+        { label: 'AMBER',          value: warnCount,        sub: 'score 7–9',             color: 'var(--status-warn)'   },
         { label: 'RED',            value: failCount,        sub: 'score < 7',             color: 'var(--status-fail)'   },
         { label: 'INDIVIDUAL',     value: individualCount,  sub: 'single validations',    color: 'var(--accent-blue)'   },
         { label: 'BATCH',          value: batchCount,       sub: 'batch project entries', color: 'var(--text-secondary)'},

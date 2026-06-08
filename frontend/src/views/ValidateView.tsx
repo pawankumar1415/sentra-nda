@@ -495,7 +495,7 @@ const ValidateView = () => {
                         <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
                             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right', marginBottom: '-12px' }}>
-                                Thresholds: 9-10 (Green) &bull; 7-8 (Amber) &bull; &lt; 7 (Red)
+                                Thresholds: 10 (Green) &bull; 7-9 (Amber) &bull; &lt; 7 (Red)
                             </div>
                             {/* Verdict Header */}
                             <div className="card" style={{
