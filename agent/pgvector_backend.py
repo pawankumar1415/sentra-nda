@@ -886,37 +886,47 @@ NARRATIVE TO VALIDATE:
 
 
 def batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     period, projects = parse_excel(file_bytes, filename=filename)
-    results = []
-    for project in projects:
+
+    def _validate_one(project: Dict) -> Dict:
         project_name = project["project_name"]
         narrative = (project.get("narrative_text") or "").strip()
         if not narrative:
-            results.append({
+            return {
                 "project_name": project_name,
                 "status": "skipped",
                 "validation_result": "No narrative text in the Excel file for this project.",
                 "conversation_id": None,
-            })
-            continue
+            }
         try:
             val = validate_narrative_pgvector(project_name, narrative, period)
             parsed_val = json.loads(val["validation_result"])
-            results.append({
-                "project_name":    project_name,
-                "status":          "ok",
+            return {
+                "project_name":     project_name,
+                "status":           "ok",
                 "validation_result": parsed_val.get("main_result_html", val["validation_result"]),
                 "_validation_data": parsed_val,
-                "conversation_id": val["conversation_id"],
-            })
+                "conversation_id":  val["conversation_id"],
+            }
         except Exception as exc:
             logger.exception("PGVector batch validation failed for %s", project_name)
-            results.append({
+            return {
                 "project_name": project_name,
                 "status": "error",
                 "validation_result": f"Validation error: {exc}",
                 "conversation_id": None,
-            })
+            }
+
+    # Run up to 8 validations in parallel — preserves original order
+    results: List[Dict] = [None] * len(projects)  # type: ignore
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_to_idx = {executor.submit(_validate_one, p): i for i, p in enumerate(projects)}
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            results[idx] = future.result()
+
     return {"status": "ok", "period": period, "total": len(results), "results": results}
 
 
