@@ -415,13 +415,14 @@ def sharepoint_list_projects(req: func.HttpRequest) -> func.HttpResponse:
     except ValueError:
         return _err("Request body must be valid JSON", 400)
 
-    file_id = body.get("file_id", "").strip()
+    file_id  = body.get("file_id", "").strip()
+    filename = body.get("filename", "").strip()
     if not file_id:
         return _err("'file_id' is required", 400)
 
     try:
         file_bytes = sp_download_file(file_id)
-        result     = list_projects_from_bytes(file_bytes)
+        result     = list_projects_from_bytes(file_bytes, filename=filename)
         return _ok(result)
     except ValueError as exc:
         return _err(str(exc), 400)

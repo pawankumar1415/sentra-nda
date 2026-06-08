@@ -62,10 +62,13 @@ const BatchValidateView = () => {
         setSpProjects(null);
         if (!fileId) return;
 
+        const selectedFile = spFiles.find(f => f.file_id === fileId);
+        const filename = selectedFile?.name ?? '';
+
         setSpProjectsLoading(true);
         setError('');
         try {
-            const data = await listProjectsFromSharePoint(fileId);
+            const data = await listProjectsFromSharePoint(fileId, filename);
             setSpProjects(data.projects);
             setSpPeriod(data.period);
         } catch (err: any) {

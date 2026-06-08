@@ -287,12 +287,12 @@ export const listSharePointFiles = async (): Promise<SharePointFile[]> => {
     return data.files;
 };
 
-export const listProjectsFromSharePoint = async (fileId: string): Promise<ListProjectsResponse> => {
+export const listProjectsFromSharePoint = async (fileId: string, filename: string = ''): Promise<ListProjectsResponse> => {
     const url = `${API_BASE_URL}/sharepoint/list-projects${getAuthParams()}`;
     const response = await fetch(url, {
         method: 'POST',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ file_id: fileId }),
+        body: JSON.stringify({ file_id: fileId, filename }),
     });
     if (!response.ok) {
         const errorText = await response.text();
