@@ -63,7 +63,7 @@ def _dsn() -> str:
 def _get_pool() -> pg_pool.ThreadedConnectionPool:
     global _pool
     if _pool is None:
-        _pool = pg_pool.ThreadedConnectionPool(minconn=1, maxconn=5, dsn=_dsn())
+        _pool = pg_pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=_dsn())
     return _pool
 
 
@@ -919,9 +919,9 @@ def batch_validate_pgvector(file_bytes: bytes, filename: str = "") -> Dict:
                 "conversation_id": None,
             }
 
-    # Run up to 8 validations in parallel — preserves original order
+    # Run up to 5 validations in parallel — preserves original order
     results: List[Dict] = [None] * len(projects)  # type: ignore
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         future_to_idx = {executor.submit(_validate_one, p): i for i, p in enumerate(projects)}
         for future in as_completed(future_to_idx):
             idx = future_to_idx[future]
