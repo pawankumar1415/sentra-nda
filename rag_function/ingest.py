@@ -58,6 +58,7 @@ def _safe_int(value: Any, default: int = 0) -> int:
 # Period extraction helpers
 # ─────────────────────────────────────────────────────────────────────────────
 _PERIOD_RE = re.compile(r"\b(P0[1-9]|P1[0-3])\b", re.IGNORECASE)
+_SHEET_PERIOD_RE = re.compile(r"[Pp][dD](\d{2})\b")
 
 
 def _extract_period_from_filename(filename: str) -> str:
@@ -66,6 +67,15 @@ def _extract_period_from_filename(filename: str) -> str:
         return ""
     m = _PERIOD_RE.search(filename)
     return m.group(1).upper() if m else ""
+
+
+def _extract_period_from_sheet_names(sheet_names: list) -> str:
+    """Extract period from sheet names like 'Pd08 MPPR WD9' → 'P08'."""
+    for s in sheet_names:
+        m = _SHEET_PERIOD_RE.search(s)
+        if m:
+            return f"P{int(m.group(1)):02d}"
+    return ""
 
 
 def _extract_period_from_sheet(df: "pd.DataFrame") -> str:
@@ -116,8 +126,10 @@ def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]
     df = pd.read_excel(xl, sheet_name=sheet_name, header=None)
     logger.info("Raw sheet '%s': %d rows × %d cols", sheet_name, len(df), len(df.columns))
 
-    # Extract period: filename first, then sheet content, then fallback
+    # Extract period: filename → sheet names → sheet cells → fallback
     period = _extract_period_from_filename(filename)
+    if not period:
+        period = _extract_period_from_sheet_names(xl.sheet_names)
     if not period:
         period = _extract_period_from_sheet(df)
     if not period:
