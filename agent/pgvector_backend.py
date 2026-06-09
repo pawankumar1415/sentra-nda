@@ -240,20 +240,11 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
-_SHEET_PERIOD_RE = re.compile(r"[Pp][dD](\d{2})\b")
-
-
 def _extract_period(filename: str, df: pd.DataFrame, sheet_names: list = None) -> str:
-    # 1. Filename (most reliable — e.g. "P08 Exec Project Summary FINAL.xlsx")
+    # Filename is the only reliable source — sheet names are copied between periods
     m = _PERIOD_RE.search(filename or "")
     if m:
         return m.group(1).upper()
-    # 2. Sheet names (e.g. "Pd08 MPPR WD9" → P08)
-    for s in (sheet_names or []):
-        sm = _SHEET_PERIOD_RE.search(s)
-        if sm:
-            return f"P{int(sm.group(1)):02d}"
-    # 3. First few cells of the sheet
     for i in range(min(6, len(df))):
         for j in range(min(10, len(df.columns))):
             m = _PERIOD_RE.search(_safe(df.iloc[i, j]))
@@ -269,7 +260,7 @@ def parse_excel(file_bytes: bytes, filename: str = "") -> Tuple[str, List[Dict]]
         raise ValueError(f"Sheet '5a)NDA MPPR' not found. Available: {xl.sheet_names}")
 
     df = pd.read_excel(xl, sheet_name=sheet_name, header=None)
-    period = _extract_period(filename, df, sheet_names=xl.sheet_names)
+    period = _extract_period(filename, df)
     projects: List[Dict] = []
 
     for i in range(6, len(df)):
