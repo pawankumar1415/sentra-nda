@@ -16,7 +16,7 @@ The system provides **two independent validation approaches** that can be used s
 | **Auth** | JWT login/register, per-user data isolation | Azure Function host key only |
 | **Validation Output** | Structured JSON (scores, issues, rewrite) | Free-form agent analysis |
 | **Memory** | PostgreSQL session history (per user) | Azure Blob Storage conversation blobs |
-| **Search** | PGVector cosine similarity | Azure AI Search (keyword + full-text) |
+| **Search** | PGVector cosine similarity | PGVector cosine similarity |
 
 ```
 ┌─────────────────────────────────────────┐
@@ -31,10 +31,11 @@ RAG Function App    Agent Function App
 (nda-python-backend) (nda-foundry-api)
     │                     │
     ├─ PostgreSQL          ├─ Azure AI Foundry
-    │  (PGVector)          │  (Agent + Memory Store)
-    ├─ Azure OpenAI        ├─ Azure AI Search
-    └─ Azure Blob          └─ Azure Blob
-       (EAC data)             (EAC + conversation blobs)
+    │  (PGVector)          │  (Agent)
+    ├─ Azure OpenAI        ├─ PostgreSQL
+    └─ Azure Blob          │  (PGVector)
+       (EAC data)          └─ Azure Blob
+                              (EAC + conversation blobs)
 ```
 
 ---
@@ -141,14 +142,21 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 
 ### Agent Function App (`nda-foundry-api`)
 
+These are the **active pgvector-backed routes** — what Power Automate flows and the React engine toggle call:
+
 | Method | Route | Description |
 |--------|-------|-------------|
-| POST | `/api/ingest-mppr` | Upload MPPR Excel → index in Azure AI Search |
-| POST | `/api/ingest-eac` | Upload EAC variance Excel → Azure Blob Storage |
-| POST | `/api/validate` | Validate narrative using AI Foundry agent |
-| POST | `/api/batch-validate` | Batch validate all narratives in an Excel file |
-| POST | `/api/chat` | Conversational QA over indexed project data |
-| GET  | `/api/search-projects?q=<term>` | Wildcard search of indexed project names |
+| POST | `/api/pgvector/ingest-mppr` | Upload MPPR Excel → embed → store in PGVector |
+| POST | `/api/pgvector/ingest-eac` | Upload EAC variance Excel → Azure Blob Storage |
+| POST | `/api/pgvector/validate` | Validate narrative using Foundry agent + PGVector context |
+| POST | `/api/pgvector/batch-validate` | Batch validate all narratives in an Excel file |
+| POST | `/api/pgvector/chat` | Conversational QA via Foundry agent + PGVector |
+| POST | `/api/pgvector/list-projects` | Extract project list from Excel (no DB write) |
+| GET  | `/api/pgvector/search-projects?q=<term>` | Search indexed projects by name |
+| GET  | `/api/pgvector/history` | Retrieve conversation history |
+| POST | `/api/pa-batch-validate` | Power Automate batch validate (internally calls pgvector backend) |
+
+Legacy routes (`/api/validate`, `/api/chat`, etc.) still exist in the code but are backed by Azure AI Search and are not used by current flows.
 
 ---
 
@@ -165,17 +173,10 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 ### Agent Function
 
 **Short-term (Azure Blob Storage)**
-- First `/api/validate` or `/api/chat` call generates a UUID conversation ID
+- First `/api/pgvector/validate` or `/api/pgvector/chat` call generates a UUID conversation ID
 - Conversation history stored as a JSON blob: `nda-data/conversations/<uuid>.json`
 - Client passes `conversation_id` on follow-up calls to resume context within the same session
 - Non-fatal: if the blob write fails, validation still completes
-
-**Long-term (Azure AI Foundry Memory Store)**
-- Extracts and consolidates key facts across sessions — projects validated, recurring issues, user preferences
-- Recalled automatically via `agent_reference` on every subsequent call; no extra code needed in the caller
-- Scoped per user via the `user_scope` parameter so different users do not share memories
-- Requires an embedding model deployment alongside the chat model
-- Setup: run `python agent/setup_memory.py create` once, or add via the Foundry portal under Memory (Preview)
 
 ---
 
@@ -227,11 +228,11 @@ All data routes require `Authorization: Bearer <token>`. Admin routes additional
 
 ### Prerequisites
 - Azure subscription with:
-  - Azure Database for PostgreSQL Flexible Server (with pgvector extension)
-  - Azure OpenAI resource (embeddings + chat deployments)
-  - Azure AI Foundry project + agent (`nda-narrative-validator-v3`)
-  - Azure AI Search instance
-  - Azure Blob Storage account
+  - Azure Database for PostgreSQL Flexible Server (with pgvector extension enabled via `setup_db.py`)
+  - Azure AI Services (S0) — provides GPT chat (`gpt-5.1-chat`) and embedding (`text-embedding-3-large`) deployments
+  - Azure AI Foundry Hub — separate resource from AI Services; the Foundry project and agent (`nda-narrative-validator-v3`) live inside it
+  - Azure Blob Storage account (`nda-data` container for EAC + conversation blobs; `guidance` container for Good Practice DOCX)
+  - Azure Static Web App (`nda-custom-frontend-static`) for the React frontend
 
 ### Local Development
 
@@ -247,7 +248,6 @@ func start
 ```bash
 cd agent
 # Fill in local.settings.json with real values
-python setup_memory.py list   # verify Memory Store
 func start
 ```
 
@@ -262,6 +262,14 @@ npm run dev
 ```
 
 ### Deployment
+
+**One-time: PostgreSQL setup**
+
+Before deploying either function app to a new environment, enable the pgvector extension and create all required tables:
+```bash
+# Run from repo root — requires POSTGRES_* env vars to be set
+python setup_db.py
+```
 
 **RAG function:**
 ```bash
@@ -288,7 +296,6 @@ npm install -g @azure/static-web-apps-cli
 Step 1 — Confirm `frontend/.env.production` contains real values (Vite bakes these into the bundle at build time):
 ```
 VITE_AZURE_FUNCTION_KEY=<rag-function-host-key>
-VITE_AZURE_AGENT_FUNCTION_KEY=<agent-function-host-key>
 VITE_API_BASE_URL=https://nda-python-backend.azurewebsites.net/api
 ```
 
@@ -343,11 +350,15 @@ Both function apps read all settings from environment variables. In local dev th
 |----------|-------------|
 | `AZURE_FOUNDRY_PROJECT_ENDPOINT` | AI Foundry project endpoint URL |
 | `AZURE_FOUNDRY_MODEL_DEPLOYMENT` | Chat model deployment name |
-| `AZURE_AI_SEARCH_CONNECTION_NAME` | AI Search connection name in Foundry |
-| `AZURE_SEARCH_INDEX_NAME` | AI Search index name |
 | `AZURE_STORAGE_ACCOUNT_URL` | Blob storage URL (EAC + conversation blobs) |
-| `MEMORY_STORE_NAME` | Foundry Memory Store name |
-| `AZURE_FOUNDRY_EMBEDDING_DEPLOYMENT` | Embedding deployment for Memory Store |
+| `POSTGRES_HOST` | PostgreSQL server hostname (shared with RAG function) |
+| `POSTGRES_DB` | Database name |
+| `POSTGRES_USER` | DB user |
+| `POSTGRES_PASSWORD` | DB password (leave empty for Managed Identity) |
+| `AZURE_OPENAI_ENDPOINT` | Azure AI Services endpoint (for embeddings) |
+| `AZURE_OPENAI_API_KEY` | Azure AI Services API key |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | Embedding model deployment name |
+| `AZURE_OPENAI_EMBEDDING_DIMS` | Embedding dimensions (e.g. `3072` for text-embedding-3-large) |
 
 ---
 
