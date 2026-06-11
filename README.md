@@ -18,24 +18,27 @@ The system provides **two independent validation approaches** that can be used s
 | **Memory** | PostgreSQL session history (per user) | Azure Blob Storage conversation blobs |
 | **Search** | PGVector cosine similarity | PGVector cosine similarity |
 
-```
-┌─────────────────────────────────────────┐
-│              React Frontend              │
-│  Chat │ Validate │ Batch Validate │ Ingest │
-└──────────────┬──────────────────────────┘
-               │
-    ┌──────────┴──────────┐
-    │                     │
-    ▼                     ▼
-RAG Function App    Agent Function App
-(nda-python-backend) (nda-foundry-api)
-    │                     │
-    ├─ PostgreSQL          ├─ Azure AI Foundry
-    │  (PGVector)          │  (Agent)
-    ├─ Azure OpenAI        ├─ PostgreSQL
-    └─ Azure Blob          │  (PGVector)
-       (EAC data)          └─ Azure Blob
-                              (EAC + conversation blobs)
+```mermaid
+graph TD
+    FE["React Frontend\n(Azure Static Web App)"]
+    CA["Canvas App + Power Automate\n(Power Platform — 12 flows)"]
+
+    FE -->|JWT auth| RAG["RAG Function App\nnda-python-backend"]
+    CA -->|Host key| AGENT["Agent Function App\nnda-foundry-api"]
+
+    RAG --> PG[("PostgreSQL + pgvector")]
+    RAG --> BLOB1[("Azure Blob — EAC data")]
+    AGENT --> PG
+    AGENT --> BLOB2[("Azure Blob — EAC + conversations")]
+
+    subgraph aif["Azure AI Foundry Hub"]
+        AF["Foundry Agent\nnda-narrative-validator-v3"]
+        AOAI["Azure AI Services\ngpt-5.1-chat · text-embedding-3-large"]
+        AF --> AOAI
+    end
+
+    AGENT --> AF
+    RAG --> AOAI
 ```
 
 ---
