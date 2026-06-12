@@ -143,8 +143,8 @@ All tables are created automatically on cold-start by `ensure_schema()` in `db.p
 
 | Column | Type | Notes |
 |---|---|---|
-| `project_id` | TEXT PK | `"{user_id}\|{period}\|{project_name}"` — scoped per user |
-| `user_id` | UUID FK → users | Isolates data per user |
+| `project_id` | TEXT PK | `"{period}\|{project_name}"` — shared across all users |
+| `user_id` | UUID FK → users | Stored as audit metadata only — not used for query scoping |
 | `project_name` | TEXT | |
 | `period_short_name` | TEXT | e.g. `P07` |
 | `rag_status` | TEXT | R/A/G |
@@ -213,7 +213,7 @@ Tokens expire after **8 hours**. The frontend stores the token in `localStorage`
 
 ### Admin Routes (admin JWT required)
 
-#### GET /api/admin/users
+#### GET /api/mgmt/users
 
 Returns all users with stats.
 
@@ -233,7 +233,7 @@ Returns all users with stats.
 }
 ```
 
-#### POST /api/admin/users/update
+#### POST /api/mgmt/users/update
 
 ```json
 { "user_id": "uuid", "is_active": false }
@@ -241,7 +241,7 @@ Returns all users with stats.
 { "user_id": "uuid", "is_admin": true }
 ```
 
-#### POST /api/admin/users/delete
+#### POST /api/mgmt/users/delete
 
 ```json
 { "user_id": "uuid" }
@@ -337,11 +337,10 @@ Passwords are hashed with **PBKDF2-HMAC-SHA256** at 310,000 iterations (OWASP 20
 
 ### Data Isolation
 
-Every user's data is completely isolated:
-- `nda_projects.project_id` is prefixed with the `user_id`, so two users uploading the same period file never overwrite each other.
-- All DB queries in `validate.py`, `chat.py`, `search_projects` include `WHERE user_id = <current_user>`.
-- `nda_eac_variance` has a **composite PK** `(project_name, user_id)`.
-- `chat_sessions` stores `user_id` so conversation history is private.
+- `nda_projects` is a **shared table** — all users read from and write to the same pool. `user_id` is stored as audit metadata only. Two users uploading the same period will overwrite the same rows.
+- `nda_eac_variance` has a **composite PK** `(project_name, user_id)` — EAC data is per user.
+- `chat_sessions` stores `user_id` — conversation history is private per user.
+- `users` table is fully isolated — admin operations are scoped to specific user IDs.
 
 ---
 
@@ -392,7 +391,7 @@ The function will be available at `http://localhost:7071/api/`.
 
 3. **Test a protected endpoint**:
    ```powershell
-   curl http://localhost:7071/api/admin/users `
+   curl http://localhost:7071/api/mgmt/users `
      -H "Authorization: Bearer <token>"
    ```
 
