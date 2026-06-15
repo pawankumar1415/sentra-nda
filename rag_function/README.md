@@ -18,6 +18,52 @@ The React frontend connects only to `nda-python-backend`. There is no connection
 
 ---
 
+## Folder Structure
+
+```
+rag_function/
+├── function_app.py         Azure Functions v2 entry point — all HTTP route definitions
+├── auth.py                 JWT authentication: register, login, token validation
+├── db.py                   PostgreSQL connection pool + ensure_schema() on cold start
+├── embedder.py             Azure OpenAI embedding wrapper (single + batch)
+├── ingest.py               MPPR Excel parser → pgvector upsert (nda_projects)
+├── ingest_eac.py           EAC variance Excel parser → upsert (nda_eac_variance)
+├── validate.py             Single narrative validation pipeline (Layer 1 + Layer 2)
+├── batch_validate.py       Loops validate.py per project row for batch calls
+├── chat.py                 Conversational RAG pipeline
+├── conversation.py         PostgreSQL-backed chat session and message history
+├── guidance_loader.py      Fetches Good Practice Guidelines DOCX from Blob (cached)
+├── sharepoint_client.py    SharePoint file listing and download via Graph API
+├── requirements.txt        Python dependencies
+├── host.json               Azure Functions host configuration
+└── local.settings.json     Local env vars — gitignored, never commit
+
+frontend/
+├── src/
+│   ├── App.tsx             SPA root — React Router route definitions
+│   ├── main.tsx            Entry point
+│   ├── services/
+│   │   └── api.ts          All HTTP calls to the Function App — single source of truth
+│   ├── context/
+│   │   ├── AuthContext.tsx       JWT token + user state (persisted in localStorage)
+│   │   └── ValidationContext.tsx Batch validation state (persisted in localStorage)
+│   ├── components/
+│   │   ├── ProtectedRoute.tsx    Redirects unauthenticated users to /login
+│   │   └── Sidebar.tsx           Navigation — hides /admin if not admin
+│   └── views/
+│       ├── LoginView.tsx         Register + sign-in tabs
+│       ├── ValidateView.tsx      Single narrative validation
+│       ├── BatchValidateView.tsx Upload MPPR → validate all projects
+│       ├── ChatView.tsx          Conversational RAG assistant
+│       ├── IngestView.tsx        MPPR + EAC upload, SharePoint browser
+│       ├── AnalyticsView.tsx     Validation history (reads from localStorage)
+│       └── AdminView.tsx         User management — admin only
+└── public/
+    └── staticwebapp.config.json  Azure Static Web App routing (serves index.html for all routes)
+```
+
+---
+
 ## How it works
 
 ```mermaid

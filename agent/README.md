@@ -17,6 +17,28 @@ Power Apps Canvas App and Power Automate flows live in Power Platform — not in
 
 ---
 
+## Folder Structure
+
+```
+agent/
+├── function_app.py         Azure Functions v2 entry point — all HTTP route definitions
+├── pgvector_backend.py     Active backend for all 12 Power Automate flows (pgvector routes)
+├── agent_runner.py         Foundry agent execution + conversation blob management
+├── batch_validate.py       Loops validate per project row for batch calls
+├── chat.py                 Chat wrapper — loads/saves conversation blob, calls agent
+├── tools.py                Tool functions the Foundry agent calls (EAC lookup, schedule check)
+├── system_prompt.py        Agent system prompt text — validation rules and output format
+├── guidance_loader.py      Fetches Good Practice Guidelines DOCX from Blob (cached)
+├── ingest_helper.py        AI Search indexing and search — legacy, not used by current flows
+├── config.py               Centralised env var reading — all modules import from here
+├── create_agent.py         One-time script to create the Foundry agent (not part of runtime)
+├── setup_memory.py         CLI for Foundry Memory Store setup (not used in production)
+├── requirements.txt        Python dependencies
+└── host.json               Azure Functions host configuration
+```
+
+---
+
 ## How it works
 
 ```mermaid
